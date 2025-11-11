@@ -64,19 +64,9 @@ def preprocess_full_sequence(sample: Dict, data_cfg: Dict) -> torch.Tensor:
     Replicates TrajectoryWindowDataset preprocessing for an entire trajectory.
     Returns tensor shaped [state_dim, T_decimated].
     """
-    seq = sample["y"]
-    if not isinstance(seq, torch.Tensor):
-        seq = torch.tensor(seq, dtype=torch.float32)
-    else:
-        seq = seq.to(torch.float32)
-    if seq.ndim != 2:
-        raise ValueError("sample['y'] must be [time, states].")
-    q = int(data_cfg.get("decimation", 10))
-    if q > 1:
-        arr = decimate(seq.cpu().numpy(), q, axis=0, zero_phase=True)
-        seq = torch.from_numpy(np.ascontiguousarray(arr, dtype=np.float32))
-    # transpose to [states, time]
-    return seq.transpose(0, 1).contiguous()
+    decimation = int(data_cfg.get("decimation", 1))
+    seq_time_states = TrajectoryWindowDataset.preprocess_series(sample, decimation=decimation)  # [time, states]
+    return seq_time_states.transpose(0, 1).contiguous()
 
 def forecast_full_trajectory(model: WindowMLP, sample: Dict, data_cfg: Dict) -> dict:
     """
@@ -199,16 +189,6 @@ def train_from_config(config):
         lr=config["model"]["lr"],
     )
 
-    loaders_cfg = {
-        "input_length": config["data"]["input_length"],
-        "target_length": config["data"]["target_length"],
-        "step": config["data"]["step"],
-        "decimation": config["data"]["decimation"],
-        "batch_size": config["training"]["batch_size"],
-        "shuffle": config["training"].get("shuffle", True),
-        "num_workers": config["training"].get("num_workers", os.cpu_count() - 1),
-    }
-
     checkpoint_cb = ModelCheckpoint(
         dirpath=run_dir / "checkpoints",
         filename="epoch{epoch:02d}-val_loss{val_loss:.4f}",
@@ -239,9 +219,11 @@ def train_from_config(config):
         deterministic=True,
         default_root_dir=run_dir,
     )
-    trainer.fit(model, train_loader, val_loader)
-
-    final_ckpt_path = Path("artifacts") / "final_model.ckpt"
+    
+    print(f"Train windows: {len(train_loader.dataset)}, batch_size: {train_loader.batch_size}, batches/epoch: {len(train_loader)}")
+    trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader)
+    
+    final_ckpt_path = run_dir / "final_model.ckpt"
     final_ckpt_path.parent.mkdir(exist_ok=True)
     trainer.save_checkpoint(str(final_ckpt_path))
     print(f"Saved final checkpoint to {final_ckpt_path}")

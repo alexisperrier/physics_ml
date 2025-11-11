@@ -42,7 +42,7 @@ class WindowMLP(Seq2SeqForecastingModule):
         return y.view(batch, self.state_dim, self.target_len)
         
     def autoregressive_forecast(
-        model: nn.Module,
+        self: nn.Module,
         initial_sequence: torch.Tensor,
         forecast_horizon: int,
         input_len: int,
@@ -53,7 +53,7 @@ class WindowMLP(Seq2SeqForecastingModule):
             raise ValueError("initial_sequence must be shaped [states, time].")
         if initial_sequence.size(1) < input_len:
             raise ValueError("initial_sequence must contain at least input_len steps.")
-        device = device or next(model.parameters()).device
+        device = device or next(self.parameters()).device
         history = initial_sequence.to(device)
         generated: list[torch.Tensor] = []
         produced = 0
@@ -61,7 +61,7 @@ class WindowMLP(Seq2SeqForecastingModule):
             window = history[:, -input_len:].contiguous()
             window_batch = window.unsqueeze(0)  # [1, S, input_len]
             with torch.no_grad():
-                step_pred = model(window_batch, target_len)  # type: ignore[call-arg]
+                step_pred = self(window_batch, target_len)  # type: ignore[call-arg]
             step_pred = step_pred.squeeze(0)                 # [S, target_len]
             need = min(step_pred.size(1), forecast_horizon - produced)
             step_pred = step_pred[:, :need]

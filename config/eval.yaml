@@ -12,7 +12,7 @@ data:
 decimation: 10
 
 model:
-  checkpoint_path: artifacts/final_model.ckpt
+  checkpoint_path: artifacts/initial_test-20251110-192225-5a5c9199/checkpoints/epochepoch=02-val_lossval_loss=1.0686.ckpt
 
 output:
   metrics_path: artifacts/eval/metrics.json
