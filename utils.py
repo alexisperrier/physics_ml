@@ -3,7 +3,7 @@ from email.headerregistry import DateHeader
 import importlib
 import os
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 import uuid
 import numpy as np
 import torch
@@ -13,7 +13,7 @@ import argparse
 import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 
-from data_processing.datasets import TrajectoryWindowDataset
+from data_processing.datasets import TrajectoryWindowDataset, OdePINNDataset
 from data_processing.generate_data import read_trajectories_parquet_as_dicts, as_torch, preprocess_series
 from models.MLP import WindowMLP
 
@@ -120,13 +120,23 @@ def split_train_val(samples: List[Dict], val_ratio: float, seed: int) -> tuple[L
     return arr[train_idx].tolist(), arr[val_idx].tolist()
 
 def build_loader(samples: List[Dict], data_cfg: Dict, train: bool, batch_size: int, num_workers: int):
-    dataset = TrajectoryWindowDataset(
-        samples,
-        input_length=data_cfg["input_length"],
-        target_length=data_cfg["target_length"],
-        step=data_cfg["step"],
-        decimation=data_cfg["decimation"],
-    )
+    dataset_cfg = data_cfg.get("dataset")
+    if dataset_cfg:
+        dataset_class_path = dataset_cfg.get("class")
+        if not dataset_class_path:
+            raise ValueError("`data.dataset.class` must be provided when using a custom dataset.")
+        dataset_cls = _import_class(dataset_class_path)
+        dataset_params = dict(dataset_cfg.get("params", {}))
+    else:
+        dataset_cls = TrajectoryWindowDataset
+        dataset_params = {
+            "input_length": data_cfg["input_length"],
+            "target_length": data_cfg["target_length"],
+            "step": data_cfg["step"],
+            "decimation": data_cfg["decimation"],
+        }
+
+    dataset = dataset_cls(samples, **dataset_params)
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -142,7 +152,7 @@ def preprocess_full_sequence(sample: Dict, data_cfg: Dict) -> torch.Tensor:
     Returns tensor shaped [state_dim, T_decimated].
     """
     decimation = int(data_cfg.get("decimation", 1))
-    seq_time_states = TrajectoryWindowDataset.preprocess_series(sample, decimation=decimation)  # [time, states]
+    seq_time_states = TrajectoryWindowDataset.preprocess_series(sample, decimation=decimation)  # type: ignore # [time, states]
     return seq_time_states.transpose(0, 1).contiguous()
 
 def forecast_full_trajectory(model: WindowMLP, sample: Dict, data_cfg: Dict) -> dict:
@@ -180,12 +190,40 @@ def forecast_full_trajectory(model: WindowMLP, sample: Dict, data_cfg: Dict) -> 
         "target": target_tail.cpu(),
     }
 
-def _build_model(model_cfg: Dict, data_cfg: Dict) -> pl.LightningModule:
-    class_path = model_cfg["class"]
-    module_name, _, cls_name = class_path.rpartition(".")
-    cls = getattr(importlib.import_module(module_name), cls_name)
+def _import_class(path: str):
+    module_name, _, cls_name = path.rpartition(".")
+    if not module_name:
+        raise ValueError(f"Invalid class path: {path}")
+    return getattr(importlib.import_module(module_name), cls_name)
 
+def _build_model(model_cfg: Dict, data_cfg: Dict) -> pl.LightningModule:
+    cls = _import_class(model_cfg["class"])
     params = dict(model_cfg.get("params", {}))
-    params.setdefault("input_length", data_cfg["input_length"])
-    params.setdefault("target_length", data_cfg["target_length"])
     return cls(**params)
+
+def _plot_series(times: np.ndarray,
+                    target: np.ndarray,
+                    prediction: np.ndarray,
+                    title: str,
+                    save_path: Optional[Path]):
+    num_dims = prediction.shape[1]
+    fig, axes = plt.subplots(num_dims, 1, sharex=True, figsize=(9, 2.4 * num_dims))
+    if num_dims == 1:
+        axes = [axes]
+    for dim_idx, ax in enumerate(axes): # type: ignore
+        ax.plot(times, target[:, dim_idx], label="data", color="tab:blue")
+        ax.plot(times, prediction[:, dim_idx], label="pinn", color="tab:orange", linestyle="--")
+        ax.set_ylabel(f"u{dim_idx}")
+        ax.grid(alpha=0.3)
+    axes[-1].set_xlabel("t") # type: ignore
+    axes[0].set_title(title) # type: ignore
+    axes[0].legend() # type: ignore
+    if save_path:
+        fig.savefig(save_path, bbox_inches="tight")
+    if plot_show: # type: ignore
+        plt.show()
+    plt.close(fig)
+
+
+def _ensure_2d(array: np.ndarray) -> np.ndarray:
+    return array.reshape(-1, 1) if array.ndim == 1 else array

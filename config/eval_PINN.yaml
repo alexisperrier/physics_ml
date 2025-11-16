@@ -1,0 +1,37 @@
+experiment:
+  name: pinn_eval
+  run_subdir: pinn_eval_run
+  tracking_uri: file:./mlruns
+
+data:
+  root: data
+  test_subdir: splits/test
+  step: 0.1
+  decimation: 1
+
+model:
+  checkpoint_path: artifacts/pinn_run/checkpoints/final.ckpt
+
+output:
+  plot_dir: artifacts/pinn_eval/plots
+  plot_show: false
+  metrics_path: artifacts/pinn_eval/metrics.json
+```// filepath: /home/lucas-perrier/Documents/ESILV/plasma/config/eval_parameter_pinn.yaml
+experiment:
+  name: pinn_eval
+  run_subdir: pinn_eval_run
+  tracking_uri: file:./mlruns
+
+data:
+  root: data
+  test_subdir: splits/test
+  step: 0.1
+  decimation: 1
+
+model:
+  checkpoint_path: artifacts/pinn_run/checkpoints/final.ckpt
+
+output:
+  plot_dir: artifacts/pinn_eval/plots
+  plot_show: false
+  metrics_path: artifacts/pinn_eval/metrics.json

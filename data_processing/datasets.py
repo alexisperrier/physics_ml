@@ -91,7 +91,7 @@ class OdePINNDataset(Dataset):
         device: torch.device,
     ):
         super().__init__()
-        self.device = device
+        self.device = torch.device(device)
 
         # Store per-trajectory tensors
         self.traj_t: List[torch.Tensor] = []
