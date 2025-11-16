@@ -1,34 +1,37 @@
 experiment:
   name: LVOdePINN
-  tracking_uri: file:./mlruns
-  run_subdir: pinn_run
+  tracking_uri: http://localhost:5000
+  run_subdir: pinn_run2
 
 data:
-  root: data
+  root: raw_data/lotka_volterra_trajectories_T50
   train_val_subdir: train_val
   test_subdir: test
-  input_length: 64
-  target_length: 16
-  step: 1
-  decimation: 2
+  decimation: 10
   val_ratio: 0.2
   seed: 42
   dataset:
     class: data_processing.datasets.OdePINNDataset
     params:
-      device: cuda
+      device: cpu
 
 model:
   class: models.PINN.LVOdePINN
   params:
-    lr: 1.0e-3
-    n: 1
-    state_dim: 2
-    hidden_layers: [128, 128, 128]
-    weight_data: 1.0
-    weight_pde: 1.0
+    input_size: 1
+    theta_dim: 4
+    hidden_size: 128
+    output_size: 2    
+    n_layer: 5
+    lr: 1e-5
+    seed: 42
+    t_max: 50
+    loss_weights:
+      residual: 500.0
+      ic: 50.0
+      data: 0.1
 
 training:
   batch_size: 128
   num_workers: 4
-  max_epochs: 300
+  max_epochs: 2

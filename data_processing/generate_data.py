@@ -95,37 +95,69 @@ def read_trajectories_parquet_as_dicts(file_path: str | Path) -> Iterable[Dict]:
                 "y": np.asarray([list(state) for state in row["y"]], dtype=np.float64),
                 "params": params,
             }
-
+            
 def as_torch(sample: Dict):
+    t_np = np.ascontiguousarray(sample["t"])
+    y_np = np.ascontiguousarray(sample["y"])
     return {
         "system": sample["system"],
         "run_id": sample["run_id"],
         "dt": torch.tensor(sample["dt"], dtype=torch.float32),
-        "t": torch.tensor(sample["t"], dtype=torch.float32),
-        "y": torch.tensor(sample["y"], dtype=torch.float32),  # [T, D]
+        "t": torch.tensor(t_np, dtype=torch.float32),
+        "y": torch.tensor(y_np, dtype=torch.float32),  # [T, D]
         "params": {k: torch.tensor(v, dtype=torch.float32) for k, v in sample["params"].items()},
     }
 
-def preprocess_series(sample: Dict, *, decimation: int = 1) -> np.ndarray:
+def preprocess_series(sample: Dict, *, decimation: int = 1) -> Dict[str, np.ndarray]:
     """
-    Decimate the 'y' time series for one trajectory.
+    Decimate the time series for one trajectory.
 
-    Input: sample["y"] shape [time, states]
-    Output: decimated array [time', states]
+    Input:
+        sample["t"]: shape [T]
+        sample["y"]: shape [T, D]
+
+    Output:
+        dict with keys "t" and "y" after decimation, shapes [T',] and [T', D].
     """
-    if "y" not in sample:
-        raise KeyError("Sample missing 'y' key.")
-    seq = sample["y"]
-    if seq.ndim != 2:
-        raise ValueError("Expected 'y' arrays shaped [time, states].")
+    if "y" not in sample or "t" not in sample:
+        raise KeyError("Sample must contain 't' and 'y' keys for decimation.")
+
+    t = np.asarray(sample["t"])
+    y = np.asarray(sample["y"])
+
+    if y.ndim != 2:
+        raise ValueError(f"Expected 'y' with shape [time, states], got shape {y.shape}")
+    if t.ndim != 1:
+        raise ValueError(f"Expected 't' with shape [time], got shape {t.shape}")
+    if t.shape[0] != y.shape[0]:
+        raise ValueError(
+            f"Length mismatch: t.shape[0]={t.shape[0]} != y.shape[0]={y.shape[0]}"
+        )
+
     decimation = int(decimation)
     if decimation > 1:
-        arr = decimate(seq, decimation, axis=0, zero_phase=True)
-        seq = np.ascontiguousarray(arr, dtype=np.float32)
-    else:
-        seq = np.ascontiguousarray(seq, dtype=np.float32)
-    return seq
+        # decimate each state dimension in y
+        y_dec = decimate(y, decimation, axis=0, zero_phase=True)
+        # decimate time with simple striding so shapes match
+        t_dec = t[::decimation]
 
+        # Ensure equal lengths (decimate can differ by 1)
+        min_len = min(t_dec.shape[0], y_dec.shape[0])
+        t_dec = t_dec[:min_len]
+        y_dec = y_dec[:min_len, :]
+
+        # Make contiguous copies so PyTorch is happy (no negative strides)
+        t_dec = np.ascontiguousarray(t_dec)
+        y_dec = np.ascontiguousarray(y_dec)
+
+        return {"t": t_dec, "y": y_dec}
+    else:
+        # Also ensure contiguous in the non-decimated case
+        return {
+            "t": np.ascontiguousarray(t),
+            "y": np.ascontiguousarray(y),
+        }
+    
 def plot_sample(sample: Dict, show: bool = True, save_dir: str | Path | None = None) -> None:
     """
     Plot one trajectory (time series for each state dimension).
@@ -317,7 +349,57 @@ def plot_param_vs_endpoint(
         save_path=save_path,
     )
 
+
 if __name__ == "__main__":
+    system = "lotka_volterra"
+    dt = 1e-3
+    t0, t1 = 0.0, 50.0   # make sure this matches what your training config expects
+
+    # Parameter ranges for LV (adjust as you like)
+    param_ranges = {
+        "alpha": (1.0, 1.0),
+        "beta":  (0.5, 0.5),
+        "gamma": (1.0, 1.0),
+        "delta": (0.5, 0.5),
+    }
+
+    rng_seed = 123
+    rng = np.random.default_rng(rng_seed)
+
+    N = 100  # number of trajectories
+    trajectories = []
+    for _ in range(N):
+        params = {
+            key: float(rng.uniform(low, high))
+            for key, (low, high) in param_ranges.items()
+        }
+
+        # Initial conditions (prey, predator)
+        y0 = np.array([
+            rng.uniform(0.5, 2.0),  # x(0)
+            rng.uniform(0.5, 2.0),  # y(0)
+        ], dtype=np.float64)
+
+        sim = simulate_ode(lotka_volterra, y0=y0, t0=t0, t1=t1, dt=dt, params=params)
+        run_id = str(uuid.uuid4())
+
+        trajectories.append({
+            "system": system,
+            "run_id": run_id,
+            "dt": sim["dt"],
+            "t": sim["t"],          # shape [T]
+            "y": sim["y"],          # shape [T, 2]
+            "param_keys": list(sim["params"].keys()),
+            "param_values": [float(v) for v in sim["params"].values()],
+        })
+
+    out_dir = Path(__file__).parent / "data"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    dataset_dir = out_dir / f"{system}_trajectories"
+    append_trajectories_dataset(dataset_dir, trajectories)
+    print(f"Appended {len(trajectories)} trajectories to {dataset_dir}")
+
 
     # system = "lotka_volterra"
     # dt = 1e-3
@@ -329,65 +411,65 @@ if __name__ == "__main__":
     # t0, t1 = 0.0, 10.0
     # params = {"alpha": 1.0, "beta": 1.0, "gamma": 1.0, "delta": 1.0}
 
-    system = "chen"
-    dt = 1e-3
-    t0, t1 = 0.0, 500.0
-    state_low, state_high = 2.0, 2.0
-    gamma_z_limit = 0.25
-    param_ranges = {
-        "GAMMA_d": (2.0, 2.0),
-        "gamma_z": (0.1, gamma_z_limit),
-        "delta": (2.0, 2.0),
-    }
+    # system = "chen"
+    # dt = 1e-3
+    # t0, t1 = 0.0, 500.0
+    # state_low, state_high = 2.0, 2.0
+    # gamma_z_limit = 0.25
+    # param_ranges = {
+    #     "GAMMA_d": (2.0, 2.0),
+    #     "gamma_z": (0.1, gamma_z_limit),
+    #     "delta": (2.0, 2.0),
+    # }
 
-    rng_seed = None
-    rng = np.random.default_rng(rng_seed)
+    # rng_seed = None
+    # rng = np.random.default_rng(rng_seed)
 
-    N = 100
-    trajectories = []
-    for _ in range(N):
-        params = {
-            key: float(rng.uniform(low, high))
-            for key, (low, high) in param_ranges.items()
-        }
-        y0 = np.array([
-            2.0,      # p
-            2.0,      # s
-            rng.uniform(state_low, state_high),      # z
-            rng.uniform(0.0, 2.0 * np.pi),           # sigma
-        ], dtype=np.float64)
+    # N = 100
+    # trajectories = []
+    # for _ in range(N):
+    #     params = {
+    #         key: float(rng.uniform(low, high))
+    #         for key, (low, high) in param_ranges.items()
+    #     }
+    #     y0 = np.array([
+    #         2.0,      # p
+    #         2.0,      # s
+    #         rng.uniform(state_low, state_high),      # z
+    #         rng.uniform(0.0, 2.0 * np.pi),           # sigma
+    #     ], dtype=np.float64)
 
-        sim = simulate_ode(chen, y0=y0, t0=t0, t1=t1, dt=dt, params=params)
-        run_id = str(uuid.uuid4())
-        trajectories.append({
-            "system": system,
-            "run_id": run_id,
-            "dt": sim["dt"],
-            "t": sim["t"],
-            "y": sim["y"],
-            "param_keys": list(sim["params"].keys()),
-            "param_values": [float(v) for v in sim["params"].values()],
-        })
+    #     sim = simulate_ode(chen, y0=y0, t0=t0, t1=t1, dt=dt, params=params)
+    #     run_id = str(uuid.uuid4())
+    #     trajectories.append({
+    #         "system": system,
+    #         "run_id": run_id,
+    #         "dt": sim["dt"],
+    #         "t": sim["t"],
+    #         "y": sim["y"],
+    #         "param_keys": list(sim["params"].keys()),
+    #         "param_values": [float(v) for v in sim["params"].values()],
+    #     })
 
-    out_dir = Path(__file__).parent / "data"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # out_dir = Path(__file__).parent / "data"
+    # out_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_dir = out_dir / f"{system}_gammaz_{gamma_z_limit}_trajectories"
-    append_trajectories_dataset(dataset_dir, trajectories)
-    print(f"Appended {len(trajectories)} trajectories to {dataset_dir}")
+    # dataset_dir = out_dir / f"{system}_gammaz_{gamma_z_limit}_trajectories"
+    # append_trajectories_dataset(dataset_dir, trajectories)
+    # print(f"Appended {len(trajectories)} trajectories to {dataset_dir}")
 
-    # for sample in read_trajectories_parquet_as_dicts(dataset_dir):
-    #     print(sample["system"], sample["run_id"], sample["t"].shape, sample["y"].shape)
+    # # for sample in read_trajectories_parquet_as_dicts(dataset_dir):
+    # #     print(sample["system"], sample["run_id"], sample["t"].shape, sample["y"].shape)
 
-    # plot_all_trajectories(dataset_dir, show=True)
+    # # plot_all_trajectories(dataset_dir, show=True)
 
-    file_path = dataset_dir
-    param_name="gamma_z"
+    # file_path = dataset_dir
+    # param_name="gamma_z"
 
-    initial, end = collect_param_and_end_values(
-        file_path=file_path,
-        system="chen",
-        param_name=param_name,
-        end_var_idx=2,
-    )
-    plot_start_vs_end(initial, end, start_label=param_name, end_label="final y[0]")
+    # initial, end = collect_param_and_end_values(
+    #     file_path=file_path,
+    #     system="chen",
+    #     param_name=param_name,
+    #     end_var_idx=2,
+    # )
+    # plot_start_vs_end(initial, end, start_label=param_name, end_label="final y[0]")

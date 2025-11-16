@@ -4,7 +4,6 @@ import torch
 import pytorch_lightning as pl
 from torch import nn, autograd
 
-
 class OdePINN(pl.LightningModule):
     def __init__(
             self,
@@ -175,6 +174,7 @@ class ParameterAgnosticOdePINN(OdePINN):
             lr: float = 1e-3,
             seed: int = 42,
             t_max: int = 50,
+            loss_weights: Dict[str, float] | None = None,
     ):
         super().__init__(input_size=input_size, hidden_size=hidden_size, output_size=output_size, n_layer=n_layer, lr=lr, seed=seed, t_max=t_max)
         torch.manual_seed(seed)
@@ -188,9 +188,14 @@ class ParameterAgnosticOdePINN(OdePINN):
         self.net = nn.Sequential(*layers)
         self.mse = nn.MSELoss()
         self.n = input_size
+        self.p = theta_dim          # parameter dimension
         self.m = output_size        # state dimension
-        self.lr= lr
+        self.lr = float(lr)
         self.t_max = t_max
+        lw = loss_weights or {}
+        self.loss_w_res = lw.get("residual", 1.0)
+        self.loss_w_ic = lw.get("ic", 1.0)
+        self.loss_w_data = lw.get("data", 1.0)
 
     def forward(self, t: torch.Tensor, theta: torch.Tensor) -> torch.Tensor:
         t_norm = t / self.t_max
@@ -208,9 +213,9 @@ class ParameterAgnosticOdePINN(OdePINN):
         t0 = batch["t0"].to(self.device).view(-1, 1)             # (N,1)
         u_res = batch["u_res"].to(self.device).view(-1, self.m)  # 0 array in R^m (N,m)
         u0 = batch["u0"].to(self.device).view(-1, self.m)        # (N,m)
-        theta = batch["theta"]
-        t_regression = batch["t_regression"]
-        u_regression = batch["u_regression"]
+        theta = batch["theta"].view(-1, self.p)
+        t_regression = batch["t_regression"].to(self.device).view(-1, self.n)
+        u_regression = batch["u_regression"].to(self.device).view(-1, self.m)
 
         # Residual loss
         loss_res = self.mse(self.residual(t, theta), u_res)
@@ -224,8 +229,11 @@ class ParameterAgnosticOdePINN(OdePINN):
             u_regression
         )
 
-        loss_total = 100.0 * loss_res + 50.0 * loss_ic + 100.0 * loss_data
-
+        loss_total = (
+            self.loss_w_res * loss_res
+            + self.loss_w_ic * loss_ic
+            + self.loss_w_data * loss_data
+        )
         return {
             "loss_total": loss_total,
             "loss_res": loss_res,

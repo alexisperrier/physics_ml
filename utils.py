@@ -94,17 +94,19 @@ def plot_test_series_prediction(
 def load_data(path: str | Path, *, to_torch: bool = True, decimation: int = 1) -> List[Dict]:
     """
     Load all trajectory records stored as Parquet shards and apply decimation
-    to the 'y' time series before conversion to torch.
+    to the time and 'y' time series before conversion to torch.
 
-    decimation: keep every `decimation`-th time step (with anti-alias filtering).
+    decimation: keep every `decimation`-th time step (with anti-alias filtering for y).
     """
     dataset_path = Path(os.fspath(path))
     if not dataset_path.exists():
         raise FileNotFoundError(f"Dataset not found at {dataset_path}")
     samples: List[Dict] = []
     for raw_sample in read_trajectories_parquet_as_dicts(dataset_path):
-        # 1) decimate y
-        raw_sample["y"] = preprocess_series(raw_sample, decimation=decimation)
+        # 1) decimate t and y together
+        decimated = preprocess_series(raw_sample, decimation=decimation)
+        raw_sample["t"] = decimated["t"]
+        raw_sample["y"] = decimated["y"]
         # 2) (optionally) convert to torch
         samples.append(as_torch(raw_sample) if to_torch else raw_sample)
     return samples
@@ -119,24 +121,36 @@ def split_train_val(samples: List[Dict], val_ratio: float, seed: int) -> tuple[L
     arr = np.array(samples, dtype=object)
     return arr[train_idx].tolist(), arr[val_idx].tolist()
 
-def build_loader(samples: List[Dict], data_cfg: Dict, train: bool, batch_size: int, num_workers: int):
+
+def build_loader(
+    samples: List[Dict],
+    data_cfg: Dict,
+    train: bool,
+    batch_size: int,
+    num_workers: int,
+):
+    """
+    Build a DataLoader from a list of trajectory samples and a data config.
+
+    Requires data_cfg["dataset"]["class"] to be set; no default fallback.
+    """
     dataset_cfg = data_cfg.get("dataset")
-    if dataset_cfg:
-        dataset_class_path = dataset_cfg.get("class")
-        if not dataset_class_path:
-            raise ValueError("`data.dataset.class` must be provided when using a custom dataset.")
-        dataset_cls = _import_class(dataset_class_path)
-        dataset_params = dict(dataset_cfg.get("params", {}))
-    else:
-        dataset_cls = TrajectoryWindowDataset
-        dataset_params = {
-            "input_length": data_cfg["input_length"],
-            "target_length": data_cfg["target_length"],
-            "step": data_cfg["step"],
-            "decimation": data_cfg["decimation"],
-        }
+    if not dataset_cfg:
+        raise ValueError(
+            "data.dataset configuration missing. "
+            "Please set data.dataset.class and data.dataset.params in your YAML config."
+        )
+
+    dataset_class_path = dataset_cfg.get("class")
+    if not dataset_class_path:
+        raise ValueError("`data.dataset.class` must be provided (fully-qualified import path).")
+
+    dataset_cls = _import_class(dataset_class_path)
+    dataset_params = dict(dataset_cfg.get("params", {}))
+
 
     dataset = dataset_cls(samples, **dataset_params)
+
     return DataLoader(
         dataset,
         batch_size=batch_size,

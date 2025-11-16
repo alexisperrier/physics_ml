@@ -125,9 +125,9 @@ class OdePINNDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         traj_idx, time_idx = self.index[idx]
 
-        t_series = self.traj_t[traj_idx]                 # [T]
-        y_series = self.traj_y[traj_idx]                 # [T, D]
-        theta = self.traj_theta[traj_idx].view(1, -1)    # [1, P]
+        t_series = self.traj_t[traj_idx]         # [T]
+        y_series = self.traj_y[traj_idx]         # [T, D]
+        theta = self.traj_theta[traj_idx]        # [P]
 
         # supervised sample at this time index
         t_sup = t_series[time_idx].view(1, 1)    # (1,1)
@@ -144,11 +144,11 @@ class OdePINNDataset(Dataset):
         u_res = torch.zeros_like(u_sup)          # (1,D)
 
         return {
-            "t": t_colloc.to(self.device),
-            "theta": theta.to(self.device),
-            "t0": t0.to(self.device),
-            "u0": u0.to(self.device),
-            "u_res": u_res.to(self.device),
-            "t_regression": t_sup.to(self.device),
-            "u_regression": u_sup.to(self.device),
+            "t": t_colloc,
+            "theta": theta,
+            "t0": t0,
+            "u0": u0,
+            "u_res": u_res,
+            "t_regression": t_sup,
+            "u_regression": u_sup,
         }
