@@ -168,6 +168,6 @@ def _build_model(model_cfg: Dict, data_cfg: Dict) -> pl.LightningModule:
     cls = getattr(importlib.import_module(module_name), cls_name)
 
     params = dict(model_cfg.get("params", {}))
-    params.setdefault("input_len", data_cfg["input_length"])
-    params.setdefault("target_len", data_cfg["target_length"])
+    params.setdefault("input_length", data_cfg["input_length"])
+    params.setdefault("target_length", data_cfg["target_length"])
     return cls(**params)

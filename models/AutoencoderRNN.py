@@ -46,7 +46,7 @@ class EncoderDecoderRNN(Seq2SeqForecastingModule):
         return flat.view(-1, self.target_length, self.state_dim)
     
     def forward(self, past: torch.Tensor, future_len: int) -> torch.Tensor:  # type: ignore[override]
-        if future_len != self.target_len:
+        if future_len != self.target_length:
             raise ValueError(f"WindowMLP configured for target_len={self.target_len}, got {future_len}.")
         
         past_seq = past.permute(0, 2, 1).contiguous()   # Expect past as [batch, state_dim, input_len] -> convert to [batch, input_len, state_dim]

@@ -41,13 +41,13 @@ def eval_from_config(config: Dict) -> Dict:
     per_sample = []
     results_cache = []
     for idx, sample in enumerate(test_series):
-        res = forecast_full_trajectory(model, sample, config["data"])
+        res = forecast_full_trajectory(model, sample, config["data"]) # type: ignore
         results_cache.append(res)
         if idx < 5:
             run_name = res.get("run_id") or sample.get("run_id") or f"series_{idx:03d}"
             save_path = plot_dir_path / f"{run_name}.png" if plot_dir_path else None
             plot_test_series_prediction(
-                model,
+                model, # type: ignore
                 sample,
                 config["data"],
                 forecast_result=res,
@@ -164,7 +164,7 @@ def train_from_config(config):
         default_root_dir=run_dir,
     )
     
-    print(f"Train windows: {len(train_loader.dataset)}, batch_size: {train_loader.batch_size}, batches/epoch: {len(train_loader)}")
+    print(f"Train windows: {len(train_loader.dataset)}, batch_size: {train_loader.batch_size}, batches/epoch: {len(train_loader)}") # type: ignore
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader)
     
     final_ckpt_path = run_dir / "final_model.ckpt"
