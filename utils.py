@@ -14,7 +14,7 @@ import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 
 from data_processing.datasets import TrajectoryWindowDataset
-from data_processing.generate_data import read_trajectories_parquet_as_dicts, as_torch as sample_to_torch
+from data_processing.generate_data import read_trajectories_parquet_as_dicts, as_torch, preprocess_series
 from models.MLP import WindowMLP
 
 
@@ -27,7 +27,7 @@ def plot_test_series_prediction(
     state_indices: List[int] | None = None,
     show: bool = True,
     save_path: str | Path | None = None,
-) -> plt.Figure:
+) -> plt.Figure: # type: ignore
     """
     Plot ground-truth vs autoregressive forecast for a single test trajectory.
     """
@@ -79,16 +79,34 @@ def plot_test_series_prediction(
         plt.close(fig)
     return fig
 
-def load_data(path: str | Path, *, to_torch: bool = True) -> List[Dict]:
+# def load_data(path: str | Path, *, to_torch: bool = True) -> List[Dict]:
+#     """
+#     Load all trajectory records stored as Parquet shards.
+#     """
+#     dataset_path = Path(os.fspath(path))
+#     if not dataset_path.exists():
+#         raise FileNotFoundError(f"Dataset not found at {dataset_path}")
+#     samples: List[Dict] = []
+#     for raw_sample in read_trajectories_parquet_as_dicts(dataset_path):
+#         samples.append(sample_to_torch(raw_sample) if to_torch else raw_sample)
+#     return samples
+
+def load_data(path: str | Path, *, to_torch: bool = True, decimation: int = 1) -> List[Dict]:
     """
-    Load all trajectory records stored as Parquet shards.
+    Load all trajectory records stored as Parquet shards and apply decimation
+    to the 'y' time series before conversion to torch.
+
+    decimation: keep every `decimation`-th time step (with anti-alias filtering).
     """
     dataset_path = Path(os.fspath(path))
     if not dataset_path.exists():
         raise FileNotFoundError(f"Dataset not found at {dataset_path}")
     samples: List[Dict] = []
     for raw_sample in read_trajectories_parquet_as_dicts(dataset_path):
-        samples.append(sample_to_torch(raw_sample) if to_torch else raw_sample)
+        # 1) decimate y
+        raw_sample["y"] = preprocess_series(raw_sample, decimation=decimation)
+        # 2) (optionally) convert to torch
+        samples.append(as_torch(raw_sample) if to_torch else raw_sample)
     return samples
 
 def split_train_val(samples: List[Dict], val_ratio: float, seed: int) -> tuple[List[Dict], List[Dict]]:

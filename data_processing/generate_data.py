@@ -7,6 +7,7 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 from scipy.integrate import solve_ivp
+from scipy.signal import decimate
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
@@ -105,6 +106,26 @@ def as_torch(sample: Dict):
         "params": {k: torch.tensor(v, dtype=torch.float32) for k, v in sample["params"].items()},
     }
 
+def preprocess_series(sample: Dict, *, decimation: int = 1) -> np.ndarray:
+    """
+    Decimate the 'y' time series for one trajectory.
+
+    Input: sample["y"] shape [time, states]
+    Output: decimated array [time', states]
+    """
+    if "y" not in sample:
+        raise KeyError("Sample missing 'y' key.")
+    seq = sample["y"]
+    if seq.ndim != 2:
+        raise ValueError("Expected 'y' arrays shaped [time, states].")
+    decimation = int(decimation)
+    if decimation > 1:
+        arr = decimate(seq, decimation, axis=0, zero_phase=True)
+        seq = np.ascontiguousarray(arr, dtype=np.float32)
+    else:
+        seq = np.ascontiguousarray(seq, dtype=np.float32)
+    return seq
+
 def plot_sample(sample: Dict, show: bool = True, save_dir: str | Path | None = None) -> None:
     """
     Plot one trajectory (time series for each state dimension).
@@ -195,8 +216,8 @@ def plot_start_vs_end(
     end_label: str,
     show: bool = True,
     save_path: str | Path | None = None,
-    ax: plt.Axes | None = None,
-) -> plt.Axes:
+    ax: plt.Axes | None = None, # type: ignore
+) -> plt.Axes: # type: ignore
     if start_values.shape != end_values.shape:
         raise ValueError("start_values and end_values must have the same shape")
     if ax is None:
@@ -208,7 +229,7 @@ def plot_start_vs_end(
     ax.set_ylabel(f"Final {end_label}")
     ax.set_title(f"{end_label} vs {start_label}")
     if save_path is not None:
-        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        fig.savefig(save_path, dpi=150, bbox_inches="tight") # type: ignore
     if show:
         plt.show()
     return ax
@@ -279,7 +300,7 @@ def plot_param_vs_endpoint(
     *,
     show: bool = True,
     save_path: str | Path | None = None,
-) -> plt.Axes:
+) -> plt.Axes: # type: ignore
     dataset_dir = Path(dataset_dir)
     starts, ends = collect_param_and_end_values(
         file_path=dataset_dir,
