@@ -162,6 +162,9 @@ class LotkaVolterraOdePINN(OdePINN):
         return f
         
 class ParameterAgnosticOdePINN(OdePINN):
+    """
+    Parameter vectors are treated as conditioning variables; the network learns u(t, θ) that generalizes across parameter sets.
+    """
     def __init__(
             self,
             input_size: int,     # 1 for t, n for R^n
@@ -269,7 +272,7 @@ class ParameterAgnosticOdePINN(OdePINN):
         """
         raise NotImplementedError
     
-class LVParameterAgnosticOdePINN(ParameterAgnosticOdePINN):
+class LVOdePINN(ParameterAgnosticOdePINN):
     def ode_rhs(self, 
                 t: torch.Tensor, 
                 u: torch.Tensor, 
@@ -279,5 +282,5 @@ class LVParameterAgnosticOdePINN(ParameterAgnosticOdePINN):
         x, y = u[:, :1], u[:, 1:]
         x_dot = alpha * x - beta * x * y
         y_dot = delta * x * y - gamma * y
-        
+
         return torch.cat([x_dot, y_dot], dim=1)

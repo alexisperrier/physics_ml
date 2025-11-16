@@ -14,32 +14,6 @@ class TrajectoryWindowDataset(Dataset):
     Provides (states, future states) supervision windows.
     """
 
-    @staticmethod
-    def preprocess_series(sample: Dict, *, decimation: int = 1) -> torch.Tensor:
-        """
-        Apply the same decimation + dtype conversion used during training.
-
-        Returns tensor shaped [time, states].
-        """
-        if "y" not in sample:
-            raise KeyError("Sample missing 'y' key.")
-        seq = sample["y"]
-        if not isinstance(seq, torch.Tensor):
-            seq = torch.tensor(seq, dtype=torch.float32)
-        else:
-            seq = seq.to(torch.float32)
-        if seq.ndim != 2:
-            raise ValueError("Expected 'y' tensors shaped [time, states].")
-
-        decimation = int(decimation)
-        if decimation > 1:
-            arr = decimate(seq.cpu().numpy(), decimation, axis=0, zero_phase=True)
-            seq = torch.from_numpy(np.ascontiguousarray(arr, dtype=np.float32))
-        else:
-            seq = seq.contiguous()
-        return seq
-
-
     def __init__(
         self,
         samples: Sequence[Dict],
@@ -57,7 +31,6 @@ class TrajectoryWindowDataset(Dataset):
         self.input_length = int(input_length)
         self.target_length = int(target_length)
         self.step = int(step)
-        self.decimation = int(decimation)
 
         self.sequences: List[torch.Tensor] = []
         self.index: List[Tuple[int, int]] = []
@@ -65,7 +38,19 @@ class TrajectoryWindowDataset(Dataset):
         required = self.input_length + self.target_length
 
         for sample in samples:
-            seq = self.preprocess_series(sample, decimation=self.decimation)
+            if isinstance(sample, torch.Tensor):
+                seq = sample
+            elif isinstance(sample, Dict) and "y" in sample:
+                seq = sample["y"]
+            else:
+                raise TypeError("Each sample must be a tensor or dict containing 'y'.")
+
+            if not isinstance(seq, torch.Tensor):
+                raise TypeError("Sequences must be torch.Tensor instances.")
+            if seq.ndim != 2:
+                raise ValueError("Expected sequences shaped [time, states].")
+
+            seq = seq.to(torch.float32).contiguous()
             total = seq.size(0)
             if total < required:
                 continue
@@ -89,3 +74,81 @@ class TrajectoryWindowDataset(Dataset):
             start + self.input_length : start + self.input_length + self.target_length
         ]  # [T2, S]
         return past.transpose(0, 1).contiguous(), future.transpose(0, 1).contiguous()
+    
+
+class OdePINNDataset(Dataset):
+    """
+    Dataset where each sample corresponds to one (trajectory, time_index) pair.
+
+    For each sample we return:
+    - collocation point (t, theta)
+    - supervised point (t_sup, u_sup, theta_sup) with SAME trajectory/parameters
+    - initial condition (t0, u0) for that trajectory
+    """
+    def __init__(
+        self,
+        trajectories: Sequence[Dict],
+        device: torch.device,
+    ):
+        super().__init__()
+        self.device = device
+
+        # Store per-trajectory tensors
+        self.traj_t: List[torch.Tensor] = []
+        self.traj_y: List[torch.Tensor] = []
+        self.traj_theta: List[torch.Tensor] = []
+        self.index: List[Tuple[int, int]] = []  # (traj_idx, time_idx)
+
+        # Assume all samples have same param keys
+        param_keys = sorted(trajectories[0]["params"].keys())
+        self.param_keys = param_keys
+
+        for k, sample in enumerate(trajectories):
+            t = sample["t"].to(torch.float32)           # [T]
+            y = sample["y"].to(torch.float32)           # [T, D]
+            theta = torch.stack(
+                [sample["params"][name].to(torch.float32) for name in param_keys],
+                dim=0,
+            )  # [P]
+
+            self.traj_t.append(t)
+            self.traj_y.append(y)
+            self.traj_theta.append(theta)
+
+            T = t.shape[0]
+            for i in range(T):
+                self.index.append((k, i))  # one entry per time step
+
+    def __len__(self) -> int:
+        return len(self.index)
+    
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        traj_idx, time_idx = self.index[idx]
+
+        t_series = self.traj_t[traj_idx]                 # [T]
+        y_series = self.traj_y[traj_idx]                 # [T, D]
+        theta = self.traj_theta[traj_idx].view(1, -1)    # [1, P]
+
+        # supervised sample at this time index
+        t_sup = t_series[time_idx].view(1, 1)    # (1,1)
+        u_sup = y_series[time_idx].view(1, -1)   # (1,D)
+
+        # collocation point: use the same time/params
+        t_colloc = t_sup.clone()
+
+        # initial condition for this trajectory
+        t0 = t_series[0].view(1, 1)              # (1,1)
+        u0 = y_series[0].view(1, -1)             # (1,D)
+
+        # residual target is zero
+        u_res = torch.zeros_like(u_sup)          # (1,D)
+
+        return {
+            "t": t_colloc.to(self.device),
+            "theta": theta.to(self.device),
+            "t0": t0.to(self.device),
+            "u0": u0.to(self.device),
+            "u_res": u_res.to(self.device),
+            "t_regression": t_sup.to(self.device),
+            "u_regression": u_sup.to(self.device),
+        }

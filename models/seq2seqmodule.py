@@ -33,7 +33,7 @@ class Seq2SeqForecastingModule(pl.LightningModule):
         # Push all saved hparams to MLflow (requires child to call save_hyperparameters)
         if getattr(self, "logger", None) and hasattr(self.logger, "log_hyperparams"):
             try:
-                self.logger.log_hyperparams(dict(self.hparams))
+                self.logger.log_hyperparams(dict(self.hparams)) # type: ignore
             except Exception:
                 pass
             
