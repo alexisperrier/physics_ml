@@ -4,7 +4,7 @@ experiment:
   run_subdir: RNN_windows_025_run02
 
 data:
-  root: /content/drive/MyDrive/ESILV_A5/project/lotka_volterra_trajectories_T50_beta05_20_IC
+  root: raw_data/lotka_volterra_trajectories_T50_beta05_20_IC
   train_val_subdir: train_val
   test_subdir: test
   val_ratio: 0.2
@@ -14,14 +14,14 @@ data:
     params:
       input_length: 1000
       target_length: 100
-      step: 1
+      step: 10
 
 model:
   class: models.AutoencoderRNN.EncoderDecoderRNN
   params:
     state_dim: 2
     input_length: 1000
-    target_length: 100
+    target_length: 10
     hidden_dim: 64
     num_layers: 3
     lr: 1e-5
