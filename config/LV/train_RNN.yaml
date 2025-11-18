@@ -4,7 +4,7 @@ experiment:
   run_subdir: RNN_windows_025_run02
 
 data:
-  root: /content/raw_data/lotka_volterra_trajectories_T50_beta05_20_IC/
+  root: /content/drive/MyDrive/ESILV_A5/project/lotka_volterra_trajectories_T50_beta05_20_IC
   train_val_subdir: train_val
   test_subdir: test
   val_ratio: 0.2
