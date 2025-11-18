@@ -219,7 +219,8 @@ def _plot_series(times: np.ndarray,
                     target: np.ndarray,
                     prediction: np.ndarray,
                     title: str,
-                    save_path: Optional[Path]):
+                    save_path: Optional[Path],
+                    plot_show: bool):
     num_dims = prediction.shape[1]
     fig, axes = plt.subplots(num_dims, 1, sharex=True, figsize=(9, 2.4 * num_dims))
     if num_dims == 1:
@@ -241,3 +242,31 @@ def _plot_series(times: np.ndarray,
 
 def _ensure_2d(array: np.ndarray) -> np.ndarray:
     return array.reshape(-1, 1) if array.ndim == 1 else array
+
+
+def _load_model_for_eval(model_cfg: Dict, data_cfg: Dict, device: torch.device) -> pl.LightningModule:
+    checkpoint_path = model_cfg.get("checkpoint_path")
+    if not checkpoint_path:
+        raise KeyError("`model.checkpoint_path` is required for evaluation.")
+    checkpoint_path = Path(checkpoint_path)
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+    if "class" not in model_cfg:
+        raise KeyError(
+            "`model.class` must be provided so the checkpoint can be restored into the correct architecture."
+        )
+
+    build_cfg = {k: v for k, v in model_cfg.items() if k != "checkpoint_path"}
+    model = _build_model(build_cfg, data_cfg)
+
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    state_dict = checkpoint.get("state_dict")
+    if state_dict is None:
+        raise KeyError(f"Checkpoint {checkpoint_path} does not contain a `state_dict`.")
+    try:
+        model.load_state_dict(state_dict, strict=True)
+    except RuntimeError as err:
+        raise RuntimeError(f"Failed to load checkpoint {checkpoint_path}: {err}") from err
+    return model
+

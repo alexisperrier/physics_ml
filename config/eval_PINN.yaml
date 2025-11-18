@@ -7,9 +7,27 @@ data:
   root: raw_data/lotka_volterra_trajectories_T50
   test_subdir: test
   decimation: 10
+  dataset:
+    class: data_processing.datasets.OdePINNDataset
+    params:
+      device: cpu 
 
 model:
-  checkpoint_path: artifacts/pinn_run2/final_model.ckpt
+  class: models.PINN.LVOdePICPINN
+  params:
+    input_size: 1
+    theta_dim: 4
+    hidden_size: 128
+    output_size: 2
+    n_layer: 6
+    lr: 1e-5
+    seed: 42
+    t_max: 50
+    loss_weights:
+      residual: 1.0
+      ic: 1.0
+      data: 0.1
+  checkpoint_path: artifacts/pinn_run1/checkpoints/epochepoch=01-val_lossval_loss=0.0000.ckpt
 
 output:
   plot_dir: artifacts/pinn_eval/plots

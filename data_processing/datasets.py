@@ -151,4 +151,6 @@ class OdePINNDataset(Dataset):
             "u_res": u_res,
             "t_regression": t_sup,
             "u_regression": u_sup,
+            "traj_idx": torch.tensor(traj_idx, dtype=torch.long),
+            "time_idx": torch.tensor(time_idx, dtype=torch.long),
         }

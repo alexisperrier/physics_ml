@@ -358,7 +358,7 @@ if __name__ == "__main__":
     # Parameter ranges for LV (adjust as you like)
     param_ranges = {
         "alpha": (1.0, 1.0),
-        "beta":  (0.5, 0.5),
+        "beta":  (0.5, 2.0),
         "gamma": (1.0, 1.0),
         "delta": (0.5, 0.5),
     }

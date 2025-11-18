@@ -1,7 +1,7 @@
 experiment:
-  name: LVOdePINN
+  name: LVPICOdePINN
   tracking_uri: http://localhost:5000
-  run_subdir: pinn_run2
+  run_subdir: pinn_run6
 
 data:
   root: raw_data/lotka_volterra_trajectories_T50
@@ -16,22 +16,22 @@ data:
       device: cpu
 
 model:
-  class: models.PINN.LVOdePINN
+  class: models.PINN.LVOdePICPINN
   params:
     input_size: 1
     theta_dim: 4
-    hidden_size: 128
+    hidden_size: 512
     output_size: 2    
-    n_layer: 5
-    lr: 1e-5
+    n_layer: 4
+    lr: 0.5e-6
     seed: 42
     t_max: 50
     loss_weights:
-      residual: 500.0
-      ic: 50.0
-      data: 0.1
+      residual: 1.0
+      ic: 1.0
+      data: 1.0
 
 training:
-  batch_size: 128
+  batch_size: 1024
   num_workers: 4
   max_epochs: 2
