@@ -22,7 +22,7 @@ class OdePINN(pl.LightningModule):
         layers = [nn.Linear(input_size, hidden_size), nn.ReLU()]
         for _ in range(n_layer - 1):
             layers += [nn.Linear(hidden_size, hidden_size), nn.ReLU()]
-        layers += [nn.Linear(hidden_size, output_size), nn.Softplus()]      # enforce positive valued output
+        layers += [nn.Linear(hidden_size, output_size)]     
 
         self.net = nn.Sequential(*layers)
         self.mse = nn.MSELoss()
@@ -47,7 +47,8 @@ class OdePINN(pl.LightningModule):
         """
         Residual of ODE system at time t
         """
-        t = t.clone().detach().requires_grad_(True)      # (N, input_size)
+        if not t.requires_grad:
+            t = t.clone().requires_grad_(True)      # (N, input_size)
         u_out = self.u(t)                                # (N, m)
 
         # compute du_j/dt for each component j = 0,...,m-1
@@ -95,12 +96,43 @@ class OdePINN(pl.LightningModule):
         }
 
     def training_step(self, batch: Dict[str, Any], batch_idx: int):
+        for k in ["t", "theta", "t0", "u0", "u_res",
+                "t_regression", "u_regression"]:
+            batch[k] = batch[k].squeeze(0)
+
         losses = self.compute_loss(batch)
         self.log("train/loss", losses["loss_total"], prog_bar=True)
         self.log("train/loss_res", losses["loss_res"], prog_bar=False)
         self.log("train/loss_ic", losses["loss_ic"], prog_bar=False)
+        self.log("train/loss_total", losses["loss_total"], prog_bar=False)
+
         return losses["loss_total"]
 
+    # def validation_step(self, batch: Dict[str, Any], batch_idx: int):
+    #     """
+    #     Compute validation losses on val_loader batches.
+    #     Uses the same compute_loss as training.
+    #     """
+    #     for k in ["t", "theta", "t0", "u0", "u_res",
+    #             "t_regression", "u_regression"]:
+    #         batch[k] = batch[k].squeeze(0)
+
+    #     with torch.enable_grad():
+    #         losses = self.compute_loss(batch)
+
+    #     losses = self.compute_loss(batch)
+    #     # main metric
+    #     self.log("val_loss", losses["loss_total"],
+    #              prog_bar=True, on_step=False, on_epoch=True)
+    #     # optionally log components
+    #     self.log("val_loss_res", losses["loss_res"],
+    #              on_step=False, on_epoch=True)
+    #     self.log("val_loss_ic", losses["loss_ic"],
+    #              on_step=False, on_epoch=True)
+    #     self.log("val_loss_data", losses["loss_data"],
+    #              on_step=False, on_epoch=True)
+    #     return losses["loss_total"]
+    
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
     
@@ -213,7 +245,7 @@ class ParameterAgnosticOdePINN(OdePINN):
         t0 = batch["t0"].to(self.device).view(-1, 1)             # (N,1)
         u_res = batch["u_res"].to(self.device).view(-1, self.m)  # 0 array in R^m (N,m)
         u0 = batch["u0"].to(self.device).view(-1, self.m)        # (N,m)
-        theta = batch["theta"].view(-1, self.p)
+        theta = batch["theta"].to(self.device).view(-1, self.p)
         t_regression = batch["t_regression"].to(self.device).view(-1, self.n)
         u_regression = batch["u_regression"].to(self.device).view(-1, self.m)
 
@@ -248,8 +280,9 @@ class ParameterAgnosticOdePINN(OdePINN):
         """
         Residual of ODE system at time t
         """
-        t = t.clone().detach().requires_grad_(True)     # (N, input_size)
-        theta = theta.clone().detach()
+        if not t.requires_grad:
+            t = t.clone().requires_grad_(True)      # (N, input_size)
+        theta = theta.clone()
         u_out = self.u(t, theta)                        # (N, m)
 
         # compute du_j/dt for each component j = 0,...,m-1
@@ -311,10 +344,10 @@ class ParameterICAgnosticOdePINN(ParameterAgnosticOdePINN):
         torch.manual_seed(seed)
         self.save_hyperparameters()
 
-        layers = [nn.Linear(input_size + theta_dim + output_size, hidden_size), nn.ReLU()]
+        layers = [nn.Linear(input_size + theta_dim + output_size, hidden_size), nn.Tanh()]
         for _ in range(n_layer - 1):
-            layers += [nn.Linear(hidden_size, hidden_size), nn.ReLU()]
-        layers += [nn.Linear(hidden_size, output_size), nn.Softplus()]      # enforce positive valued output
+            layers += [nn.Linear(hidden_size, hidden_size), nn.Tanh()]
+        layers += [nn.Linear(hidden_size, output_size)]      # enforce positive valued output
 
         self.net = nn.Sequential(*layers)
         self.mse = nn.MSELoss()
@@ -344,7 +377,7 @@ class ParameterICAgnosticOdePINN(ParameterAgnosticOdePINN):
         t0 = batch["t0"].to(self.device).view(-1, 1)             # (N,1)
         u_res = batch["u_res"].to(self.device).view(-1, self.m)  # 0 array in R^m (N,m)
         u0 = batch["u0"].to(self.device).view(-1, self.m)        # (N,m)
-        theta = batch["theta"].view(-1, self.p)
+        theta = batch["theta"].to(self.device).view(-1, self.p)
         t_regression = batch["t_regression"].to(self.device).view(-1, self.n)
         u_regression = batch["u_regression"].to(self.device).view(-1, self.m)
 
@@ -380,8 +413,9 @@ class ParameterICAgnosticOdePINN(ParameterAgnosticOdePINN):
         """
         Residual of ODE system at time t
         """
-        t = t.clone().detach().requires_grad_(True)     # (N, input_size)
-        theta = theta.clone().detach()
+        if not t.requires_grad:
+            t = t.requires_grad_(True)      # (N, input_size)
+        theta = theta
         u_out = self.u(t, theta, u0)                        # (N, m)
 
         # compute du_j/dt for each component j = 0,...,m-1
@@ -418,3 +452,124 @@ class LVOdePICPINN(ParameterICAgnosticOdePINN):
 
         return torch.cat([x_dot, y_dot], dim=1)
     
+class NormedPINN(ParameterICAgnosticOdePINN):
+    """
+    LV PIC PINN with:
+      - batch-wise normalization of t, theta, u0
+      - tanh hidden activations
+      - linear output in normalized space
+      - positivity enforced via internal softplus transform (not via net's last layer)
+    """
+
+    def __init__(
+        self,
+        input_size: int,
+        theta_dim: int,
+        hidden_size: int,
+        output_size: int,
+        n_layer: int,
+        lr: float = 1e-3,
+        seed: int = 42,
+        t_max: int = 50,
+        loss_weights: Dict[str, float] | None = None,
+    ):
+        super().__init__(
+            input_size=input_size,
+            theta_dim=theta_dim,
+            hidden_size=hidden_size,
+            output_size=output_size,
+            n_layer=n_layer,
+            lr=lr,
+            seed=seed,
+            t_max=t_max,
+            loss_weights=loss_weights,
+        )
+
+        # override architecture: tanh hidden, linear output
+        in_dim = input_size + theta_dim + output_size
+        layers: list[nn.Module] = []
+        layers.append(nn.Linear(in_dim, hidden_size))
+        layers.append(nn.Tanh())
+        for _ in range(n_layer - 1):
+            layers.append(nn.Linear(hidden_size, hidden_size))
+            layers.append(nn.Tanh())
+        layers.append(nn.Linear(hidden_size, output_size))  # raw output (can be R)
+
+        self.net = nn.Sequential(*layers)
+
+    @staticmethod
+    def _batch_norm(x: torch.Tensor, eps: float = 1e-6) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Normalize x across batch: x_norm = (x - mean) / (std + eps)
+        Returns (x_norm, mean, std).
+        """
+        if x.dim() == 1:
+            x = x.view(-1, 1)
+        mean = x.mean(dim=0, keepdim=True)
+        std = x.std(dim=0, keepdim=True)
+        std = torch.where(std < eps, torch.ones_like(std), std)
+        x_norm = (x - mean) / (std + eps)
+        return x_norm, mean, std
+    
+    def _prepare_inputs(
+        self,
+        t: torch.Tensor,
+        theta: torch.Tensor,
+        u0: torch.Tensor,
+    ) -> tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """
+        Normalize t, theta, u0 per batch and concatenate into a single input.
+        Returns:
+          inp_norm: [N, D_in] normalized concatenated input
+          stats: dict with means/stds in case you want them later
+        """
+        # ensure shapes [N,1] etc.
+        if t.ndim == 1:
+            t = t.view(-1, 1)
+
+        # time scaling: first map [0, t_max] -> [0, 1], then batch-normalize
+        t_scaled = t / self.t_max
+        t_norm, t_mean, t_std = self._batch_norm(t_scaled)
+
+        theta_norm, theta_mean, theta_std = self._batch_norm(theta)
+        u0_norm, u0_mean, u0_std = self._batch_norm(u0)
+
+        inp = torch.cat([t_norm, theta_norm, u0_norm], dim=1)
+        stats = {
+            "t_mean": t_mean,
+            "t_std": t_std,
+            "theta_mean": theta_mean,
+            "theta_std": theta_std,
+            "u0_mean": u0_mean,
+            "u0_std": u0_std,
+        }
+        return inp, stats
+
+    def forward(self, t: torch.Tensor, theta: torch.Tensor, u0: torch.Tensor) -> torch.Tensor:
+        """
+        Forward in physical space: returns u(t, theta, u0) with positivity enforced.
+        """
+        inp_norm, _ = self._prepare_inputs(t, theta, u0)
+        u_raw = self.net(inp_norm)     # can be any real number
+
+        # enforce positivity via softplus transform
+        # softplus(x) ~ log(1 + exp(x)), always > 0, smooth, avoids hard clipping
+        u_pos = torch.nn.functional.softplus(u_raw)
+
+        return u_pos
+
+    def u(self, t: torch.Tensor, theta: torch.Tensor, u0: torch.Tensor) -> torch.Tensor:
+        return self.forward(t, theta, u0)
+
+class NormedLVOdePINN(NormedPINN):
+    def ode_rhs(self, 
+                t: torch.Tensor, 
+                u: torch.Tensor, 
+                theta: torch.Tensor) -> torch.Tensor:
+        
+        alpha, beta, gamma, delta = torch.split(theta, 1, dim=1)
+        x, y = u[:, :1], u[:, 1:]
+        x_dot = alpha * x - beta * x * y
+        y_dot = delta * x * y - gamma * y
+
+        return torch.cat([x_dot, y_dot], dim=1)

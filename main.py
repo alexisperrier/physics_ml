@@ -383,8 +383,8 @@ def train_from_config(config):
 
 if __name__ == "__main__":
 
-    with open("config/train_PINN.yaml", "r") as fh:
-        cfg = yaml.safe_load(fh)
-    train_from_config(cfg)
+    # with open("config/LV/train_PINN.yaml", "r") as fh:
+    #     cfg = yaml.safe_load(fh)
+    # train_from_config(cfg)
 
-    # eval_pinn("config/eval_PINN.yaml")
+    eval_pinn("config/LV/eval_PINN.yaml")

@@ -1,0 +1,35 @@
+experiment:
+  name: pinn_eval
+  run_subdir: pinn_eval_run
+  tracking_uri: file:./mlruns
+
+data:
+  root: raw_data/lotka_volterra_trajectories_T50_beta05_20_IC
+  test_subdir: test
+  decimation: 5
+  dataset:
+    class: data_processing.datasets.OdePINNDataset
+    params:
+      device: cpu 
+
+model:
+  class: models.PINN.LVOdePICPINN
+  params:
+    input_size: 1
+    theta_dim: 4
+    hidden_size: 256
+    output_size: 2
+    n_layer: 4
+    lr: 1e-5
+    seed: 42
+    t_max: 50
+    loss_weights:
+      residual: 1.0
+      ic: 1.0
+      data: 0.1
+  checkpoint_path: artifacts/pinn_run13/checkpoints/epochepoch=07-val_lossval_loss=0.0000.ckpt
+
+output:
+  plot_dir: artifacts/pinn_eval/plots
+  plot_show: false
+  metrics_path: artifacts/pinn_eval/metrics.json
