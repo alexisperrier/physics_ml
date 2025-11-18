@@ -19,7 +19,7 @@ from models.MLP import WindowMLP
 
 
 def plot_test_series_prediction(
-    model: WindowMLP,
+    model: pl.LightningModule,
     sample: Dict,
     data_cfg: Dict,
     *,
@@ -27,7 +27,7 @@ def plot_test_series_prediction(
     state_indices: List[int] | None = None,
     show: bool = True,
     save_path: str | Path | None = None,
-) -> plt.Figure: # type: ignore
+) -> plt.Figure:
     """
     Plot ground-truth vs autoregressive forecast for a single test trajectory.
     """
@@ -168,17 +168,21 @@ def preprocess_full_sequence(sample: Dict, data_cfg: Dict) -> torch.Tensor:
     decimation = int(data_cfg.get("decimation", 1))
     seq_time_states = TrajectoryWindowDataset.preprocess_series(sample, decimation=decimation)  # type: ignore # [time, states]
     return seq_time_states.transpose(0, 1).contiguous()
-
-def forecast_full_trajectory(model: WindowMLP, sample: Dict, data_cfg: Dict) -> dict:
-    # Prefer checkpoint hyperparams to avoid mismatches across models
+def forecast_full_trajectory(model: pl.LightningModule, sample: Dict, data_cfg: Dict) -> dict:
     def _hp(name: str, fallback):
         try:
             return int(model.hparams[name])
         except Exception:
             return int(getattr(model.hparams, name, fallback))
 
-    input_len = _hp("input_len", int(data_cfg["input_length"]))
-    target_len = _hp("target_len", int(data_cfg["target_length"]))
+    dataset_params = data_cfg.get("dataset", {}).get("params", {})
+    fallback_input = data_cfg.get("input_length", dataset_params.get("input_length"))
+    fallback_target = data_cfg.get("target_length", dataset_params.get("target_length"))
+    if fallback_input is None or fallback_target is None:
+        raise KeyError("`input_length` and `target_length` must be specified in data.* or data.dataset.params.")
+
+    input_len = _hp("input_len", int(fallback_input))
+    target_len = _hp("target_len", int(fallback_target))
 
     full_seq = preprocess_full_sequence(sample, data_cfg)  # [S, T_dec]
     S, T_dec = int(full_seq.size(0)), int(full_seq.size(1))
@@ -186,22 +190,23 @@ def forecast_full_trajectory(model: WindowMLP, sample: Dict, data_cfg: Dict) -> 
     if horizon <= 0:
         return {"run_id": sample.get("run_id"), "rmse": float("nan"), "forecast": None, "target": None}
 
-    seed = full_seq[:, :input_len]
+    device = next(model.parameters()).device
+    seed = full_seq[:, :input_len].to(device)
     with torch.no_grad():
         _, forecast_tail = model.autoregressive_forecast(
             seed,
             forecast_horizon=horizon,
             input_len=input_len,
             target_len=target_len,
-            device=next(model.parameters()).device,
-        )
-    target_tail = full_seq[:, input_len : input_len + forecast_tail.size(1)]
-    rmse = float(torch.sqrt(torch.mean((forecast_tail - target_tail) ** 2)).cpu().item())
+            device=device,
+        ) # type: ignore
+    target_tail = full_seq[:, input_len : input_len + forecast_tail.size(1)].to(device)
+    rmse = float(torch.sqrt(torch.mean((forecast_tail - target_tail) ** 2)).item())
     return {
         "run_id": sample.get("run_id"),
         "rmse": rmse,
-        "forecast": forecast_tail.cpu(),
-        "target": target_tail.cpu(),
+        "forecast": forecast_tail.detach().cpu(),
+        "target": target_tail.detach().cpu(),
     }
 
 def _import_class(path: str):

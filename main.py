@@ -23,68 +23,92 @@ from data_processing.generate_data import read_trajectories_parquet_as_dicts, as
 from models.MLP import WindowMLP
 from utils import _build_model, _ensure_2d, _load_model_for_eval, _plot_series, build_loader, forecast_full_trajectory, load_data, plot_test_series_prediction, split_train_val
 
-def eval_from_config(config: Dict) -> Dict:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    root = Path(config["data"]["root"])
-    test_dir = root / config["data"]["test_subdir"]
-    test_series = load_data(test_dir)  # raw dict samples
+def eval_from_config(config_like: str | Path | Dict) -> Dict[str, float]:
+    if isinstance(config_like, (str, Path)):
+        with open(config_like, "r") as fh:
+            config = yaml.safe_load(fh)
+    else:
+        config = config_like
 
-    model = _load_model_for_eval(config["model"], config["data"], device)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    data_cfg = config["data"]
+    root = Path(data_cfg["root"])
+    test_dir = root / data_cfg["test_subdir"]
+    decimation = int(data_cfg.get("decimation", 1))
+    test_series = load_data(test_dir, decimation=decimation)
+
+    model = _load_model_for_eval(config["model"], data_cfg, device)
     model.to(device)
     model.eval()
 
-    out_cfg = config.get("output", {})
-    plot_dir = out_cfg.get("plot_dir")
-    plot_show = out_cfg.get("plot_show", False)
+    output_cfg = config.get("output", {})
+    plot_dir = output_cfg.get("plot_dir")
+    plot_show = bool(output_cfg.get("plot_show", False))
+    max_examples = int(output_cfg.get("max_examples", 5))
+    metrics_path = output_cfg.get("metrics_path")
+    forecast_dir = output_cfg.get("forecast_dir")
+
     plot_dir_path = Path(plot_dir) if plot_dir else None
     if plot_dir_path:
         plot_dir_path.mkdir(parents=True, exist_ok=True)
 
+    per_series_rmse: List[float] = []
+    results_cache: List[Dict] = []
+    plotted = 0
 
-    per_sample = []
-    results_cache = []
     for idx, sample in enumerate(test_series):
-        res = forecast_full_trajectory(model, sample, config["data"]) # type: ignore
+        res = forecast_full_trajectory(model, sample, data_cfg)
+        run_name = res.get("run_id") or sample.get("run_id") or f"series_{idx:03d}"
+        res["_run_name"] = run_name
         results_cache.append(res)
-        if idx < 5:
-            run_name = res.get("run_id") or sample.get("run_id") or f"series_{idx:03d}"
+
+        forecast = res.get("forecast")
+        target = res.get("target")
+        rmse = res.get("rmse", float("nan"))
+        if forecast is None or target is None or np.isnan(rmse):
+            continue
+
+        per_series_rmse.append(rmse)
+
+        if (plot_dir_path or plot_show) and plotted < max_examples:
             save_path = plot_dir_path / f"{run_name}.png" if plot_dir_path else None
             plot_test_series_prediction(
-                model, # type: ignore
+                model,
                 sample,
-                config["data"],
+                data_cfg,
                 forecast_result=res,
                 show=plot_show,
                 save_path=save_path,
             )
-        if not np.isnan(res["rmse"]):
-            per_sample.append(res["rmse"])
-    overall_rmse = float(np.mean(per_sample)) if per_sample else float("nan")
+            plotted += 1
 
-    print(f"Eval (decimated) RMSE: {overall_rmse:.6f}")
+    overall_rmse = float(np.mean(per_series_rmse)) if per_series_rmse else float("nan")
+    print(f"RNN Eval RMSE: {overall_rmse:.6f}")
 
-    out_cfg = config.get("output", {})
-    metrics_path = out_cfg.get("metrics_path")
     if metrics_path:
         Path(metrics_path).parent.mkdir(parents=True, exist_ok=True)
         with open(metrics_path, "w") as f:
             json.dump({"rmse": overall_rmse}, f, indent=2)
 
-    forecast_dir = out_cfg.get("forecast_dir")
     if forecast_dir:
         fd = Path(forecast_dir)
         fd.mkdir(parents=True, exist_ok=True)
         for res in results_cache:
-            if res["forecast"] is not None:
-                torch.save(
-                    {
-                        "run_id": res.get("run_id"),
-                        "forecast": res["forecast"],
-                        "target": res["target"],
-                        "rmse": res["rmse"],
-                    },
-                    fd / f"{res.get('run_id', 'series')}.pt",
-                )
+            forecast = res.get("forecast")
+            target = res.get("target")
+            if forecast is None or target is None:
+                continue
+            run_name = res.get("_run_name", res.get("run_id", "series"))
+            torch.save(
+                {
+                    "run_id": res.get("run_id"),
+                    "forecast": forecast,
+                    "target": target,
+                    "rmse": res.get("rmse"),
+                },
+                fd / f"{run_name}.pt",
+            )
+
     return {"rmse": overall_rmse}
 
 
@@ -106,6 +130,8 @@ def save_pinn_metrics(metrics_path: Optional[str], rmse: float) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump({"rmse": rmse}, f, indent=2)
+
+
 
 def eval_pinn(config_path: str = "config/eval_PINN.yaml") -> Dict[str, float]:
     with open(config_path, "r") as fh:
@@ -202,81 +228,6 @@ def eval_pinn(config_path: str = "config/eval_PINN.yaml") -> Dict[str, float]:
 
     return {"rmse": overall_rmse}
 
-# def eval_pinn(config: Dict) -> Dict:
-#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#     root = Path(config["data"]["root"])
-#     test_dir = root / config["data"]["test_subdir"]
-#     decimation = int(config["data"].get("decimation", 1))
-#     test_series = load_data(test_dir, decimation=decimation)
-
-#     model = _load_model_for_eval(config["model"], config["data"], device)
-#     model.to(device)
-#     model.eval()
-#     forward_sig = inspect.signature(model.forward)
-#     expects_theta = len(forward_sig.parameters) >= 3  # self, t, theta
-
-#     out_cfg = config.get("output", {})
-#     plot_dir = out_cfg.get("plot_dir")
-#     plot_show = out_cfg.get("plot_show", False)
-#     plot_dir_path = Path(plot_dir) if plot_dir else None
-#     if plot_dir_path:
-#         plot_dir_path.mkdir(parents=True, exist_ok=True)
-
-#     def _theta_from_sample(sample: Dict) -> torch.Tensor:
-#         if "theta" in sample and sample["theta"] is not None:
-#             return torch.as_tensor(sample["theta"], dtype=torch.float32, device=device).view(1, -1)
-#         params = sample.get("params")
-#         if isinstance(params, dict):
-#             ordered = [params[name] for name in sorted(params.keys())]
-#             theta_vals = [
-#                 torch.as_tensor(val, dtype=torch.float32).view(-1)[0].item()
-#                 for val in ordered
-#             ]
-#             return torch.tensor(theta_vals, dtype=torch.float32, device=device).unsqueeze(0)
-#         raise ValueError("Test sample must include either 'params' dict or precomputed 'theta' tensor.")
-
-#     per_series_rmse: List[float] = []
-#     max_examples = 5
-
-#     for idx, sample in enumerate(test_series):
-#         t_tensor = torch.as_tensor(sample["t"], dtype=torch.float32, device=device)
-#         if t_tensor.ndim == 1:
-#             t_tensor = t_tensor.unsqueeze(1)
-
-#         target = sample.get("y")
-#         if target is None:
-#             target = sample.get("u")
-#         if target is None:
-#             raise ValueError("Test sample must contain 'y' or 'u' (states over time).")
-#         target_arr = _ensure_2d(torch.as_tensor(target, dtype=torch.float32).cpu().numpy())
-
-#         theta_base = _theta_from_sample(sample)
-#         theta_tensor = theta_base.repeat(t_tensor.shape[0], 1)
-
-#         with torch.no_grad():
-#             preds = model(t_tensor, theta_tensor) if expects_theta else model(t_tensor)
-#         prediction = _ensure_2d(preds.detach().cpu().numpy())
-
-#         rmse = float(np.sqrt(np.mean((prediction - target_arr) ** 2)))
-#         per_series_rmse.append(rmse)
-
-#         if idx < max_examples:
-#             time_arr = t_tensor.detach().cpu().numpy().reshape(-1)
-#             run_name = sample.get("run_id") or f"series_{idx:03d}"
-#             save_path = (plot_dir_path / f"{run_name}.png") if plot_dir_path else None
-#             _plot_series(time_arr, target_arr, prediction, f"PINN forecast · {run_name}", save_path, show=plot_show)
-
-#     overall_rmse = float(np.mean(per_series_rmse)) if per_series_rmse else float("nan")
-#     print(f"PINN Eval RMSE: {overall_rmse:.6f}")
-
-#     metrics_path = out_cfg.get("metrics_path")
-#     if metrics_path:
-#         Path(metrics_path).parent.mkdir(parents=True, exist_ok=True)
-#         with open(metrics_path, "w") as f:
-#             json.dump({"rmse": overall_rmse}, f, indent=2)
-
-#     return {"rmse": overall_rmse}
-
 def train_from_config(config):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -363,6 +314,8 @@ def train_from_config(config):
         callbacks=[checkpoint_cb],
         deterministic=True,
         default_root_dir=run_dir,
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
+        devices=1 if torch.cuda.is_available() else "auto",
     )
     
     ds_cls_name = type(train_loader.dataset).__name__
@@ -383,8 +336,8 @@ def train_from_config(config):
 
 if __name__ == "__main__":
 
-    # with open("config/LV/train_PINN.yaml", "r") as fh:
-    #     cfg = yaml.safe_load(fh)
-    # train_from_config(cfg)
+    with open("config/LV/train_RNN.yaml", "r") as fh:
+        cfg = yaml.safe_load(fh)
+    train_from_config(cfg)
 
-    eval_pinn("config/LV/eval_PINN.yaml")
+    # eval_pinn("config/LV/eval_PINN.yaml")

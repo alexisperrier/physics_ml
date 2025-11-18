@@ -1,14 +1,14 @@
 experiment:
   name: RNN_windows_025
   tracking_uri: http://localhost:5000
-  run_subdir: RNN_windows_025_run01
+  run_subdir: RNN_windows_025_run02
 
 data:
   root: raw_data/chen_gammaz_0.25_trajectories
   train_val_subdir: train_val
   test_subdir: test
   input_length: 500   # q=10, seq_len=500 points --> seq = 5 seconds for T=500 seconds, T=50000 points
-  target_length: 500
+  target_length: 10
   step: 1
   decimation: 10
   val_ratio: 0.2

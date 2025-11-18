@@ -21,7 +21,6 @@ class TrajectoryWindowDataset(Dataset):
         target_length: int,
         *,
         step: int = 1,
-        decimation: int = 1,
     ) -> None:
         if input_length <= 0 or target_length <= 0:
             raise ValueError("Window lengths must be positive.")

@@ -17,6 +17,7 @@ class EncoderDecoderRNN(Seq2SeqForecastingModule):
 
         self.state_dim = state_dim 
         self.target_length = target_length
+        self.input_length = input_length
 
         self.save_hyperparameters({
             "state_dim": state_dim,
