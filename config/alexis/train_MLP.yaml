@@ -1,0 +1,29 @@
+experiment:
+  name: AP_MLP_alexis_001
+  description: MLP baseline model for Lotka-Volterra predator-prey dynamics. Tests windowed feedforward approach on generated synthetic trajectories with varying beta parameter.
+  tracking_uri: http://localhost:5000
+  run_subdir: n/a_1
+
+data:
+  root: data_processing/data/lotka_volterra_trajectories
+  train_val_subdir: train_val
+  test_subdir: test
+  input_length: 500   # q=10, seq_len=500 points --> seq = 5 seconds for T=500 seconds, T=50000 points
+  target_length: 500
+  step: 1
+  decimation: 10
+  val_ratio: 0.3
+  seed: 808
+
+model:
+  class: models.MLP.WindowMLP
+  params:
+    state_dim: 2
+    hidden_sizes: [64, 64]
+    lr: 1e-5
+
+training:
+  batch_size: 128
+  max_epochs: 3
+  num_workers: 2
+  shuffle: true

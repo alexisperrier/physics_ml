@@ -352,7 +352,7 @@ def plot_param_vs_endpoint(
 
 if __name__ == "__main__":
     system = "lotka_volterra"
-    dt = 1e-3
+    dt = 0.01  # 0.01 second = 10 ms (reduced from 1e-3)
     t0, t1 = 0.0, 50.0   # make sure this matches what your training config expects
 
     # Parameter ranges for LV (adjust as you like)

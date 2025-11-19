@@ -1,0 +1,30 @@
+experiment:
+  name: AP_MLP_alexis_001_eval
+  description: Evaluation of MLP model on Lotka-Volterra test set. Autoregressive forecasting and error metrics.
+  tracking_uri: http://localhost:5000
+
+data:
+  root: data_processing/data/lotka_volterra_trajectories
+  test_subdir: test
+  input_length: 500
+  target_length: 500
+  decimation: 10
+
+model:
+  checkpoint_path: artifacts/AP_MLP_alexis_001/checkpoints/best.ckpt
+  class: models.MLP.WindowMLP
+
+evaluation:
+  max_test_samples: null  # Use all test samples
+  autoregressive: true    # Iteratively use predictions
+  autoregressive_steps: 10  # Number of steps to roll out
+  metrics:
+    - mse
+    - mae
+    - r2
+
+output:
+  save_metrics: true
+  metrics_path: artifacts/eval_results.json
+  plot_dir: plots/eval_results
+  plot_show: false
