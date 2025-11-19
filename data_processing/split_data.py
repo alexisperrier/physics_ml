@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple
 import random
 
-from generate_data import read_trajectories_parquet_as_dicts, save_trajectories_parquet
+from .generate_data import read_trajectories_parquet_as_dicts, save_trajectories_parquet
 
 
 def split_trajectories(
@@ -114,11 +114,13 @@ def save_split_datasets(
     train_val_path = train_val_dir / "part-train.parquet"
     save_trajectories_parquet(train_val_path, train_val_trajs)
     print(f"✓ Saved {len(train_val_trajs)} train/val trajectories to {train_val_path}")
+    print(f"  File exists: {train_val_path.exists()}, size: {train_val_path.stat().st_size if train_val_path.exists() else 'N/A'}")
 
     # Save test
     test_path = test_dir / "part-test.parquet"
     save_trajectories_parquet(test_path, test_trajs)
     print(f"✓ Saved {len(test_trajs)} test trajectories to {test_path}")
+    print(f"  File exists: {test_path.exists()}, size: {test_path.stat().st_size if test_path.exists() else 'N/A'}")
 
 
 def main():
@@ -129,7 +131,7 @@ def main():
     parser.add_argument(
         "--data-dir",
         type=Path,
-        default=Path(__file__).parent / "data" / "lotka_volterra_trajectories",
+        default=(Path(__file__).parent / "data" / "lotka_volterra_trajectories").resolve(),
         help="Directory containing trajectory data (default: data_processing/data/lotka_volterra_trajectories)",
     )
     parser.add_argument(
@@ -167,12 +169,12 @@ def main():
         seed=args.seed,
     )
 
-    # Save
+    # Save (to subdirectories within data_dir)
     print()
     save_split_datasets(
         train_val_trajs,
         test_trajs,
-        args.data_dir.parent,
+        args.data_dir,  # Save train_val/ and test/ as subdirs of data_dir
         remove_old=not args.keep_old,
     )
 

@@ -166,8 +166,10 @@ def preprocess_full_sequence(sample: Dict, data_cfg: Dict) -> torch.Tensor:
     Returns tensor shaped [state_dim, T_decimated].
     """
     decimation = int(data_cfg.get("decimation", 1))
-    seq_time_states = TrajectoryWindowDataset.preprocess_series(sample, decimation=decimation)  # type: ignore # [time, states]
-    return seq_time_states.transpose(0, 1).contiguous()
+    decimated_dict = preprocess_series(sample, decimation=decimation)  # dict with 't' and 'y'
+    y = decimated_dict["y"]  # [time, states] as numpy array
+    y_tensor = torch.as_tensor(y, dtype=torch.float32)  # Convert to tensor
+    return y_tensor.transpose(0, 1).contiguous()  # [states, time]
 def forecast_full_trajectory(model: pl.LightningModule, sample: Dict, data_cfg: Dict) -> dict:
     def _hp(name: str, fallback):
         try:

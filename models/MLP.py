@@ -4,6 +4,17 @@ from torch import nn
 
 from models.seq2seqmodule import Seq2SeqForecastingModule
 
+# Mapping of activation names to torch.nn modules
+ACTIVATION_FUNCTIONS = {
+    'relu': nn.ReLU,
+    'tanh': nn.Tanh,
+    'gelu': nn.GELU,
+    'elu': nn.ELU,
+    'silu': nn.SiLU,
+    'sigmoid': nn.Sigmoid,
+    'leaky_relu': nn.LeakyReLU,
+}
+
 class WindowMLP(Seq2SeqForecastingModule):
     def __init__(
         self,
@@ -12,6 +23,7 @@ class WindowMLP(Seq2SeqForecastingModule):
         target_len: int,
         hidden_sizes: tuple[int, ...],
         lr: float = 1e-3,
+        activation: str = 'tanh',
     ):
         super().__init__(lr=lr)
         self.save_hyperparameters({
@@ -20,13 +32,22 @@ class WindowMLP(Seq2SeqForecastingModule):
             "target_len": target_len,
             "hidden_sizes": list(hidden_sizes),
             "lr": lr,
+            "activation": activation,
         })
+
+        # Get activation function class
+        if activation not in ACTIVATION_FUNCTIONS:
+            raise ValueError(
+                f"Activation '{activation}' not supported. "
+                f"Choose from: {list(ACTIVATION_FUNCTIONS.keys())}"
+            )
+        activation_cls = ACTIVATION_FUNCTIONS[activation]
 
         layers = []
         in_dim = state_dim * input_len
         for hidden_dim in hidden_sizes:
             layers.append(nn.Linear(in_dim, hidden_dim))
-            layers.append(nn.ReLU())
+            layers.append(activation_cls())
             in_dim = hidden_dim
         layers.append(nn.Linear(in_dim, state_dim * target_len))
         self.net = nn.Sequential(*layers)
@@ -40,7 +61,7 @@ class WindowMLP(Seq2SeqForecastingModule):
         x = past.view(batch, -1)
         y = self.net(x)
         return y.view(batch, self.state_dim, self.target_len)
-        
+
     def autoregressive_forecast(
         self: nn.Module,
         initial_sequence: torch.Tensor,

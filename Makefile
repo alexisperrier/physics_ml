@@ -41,6 +41,10 @@ generate-data:
 	source .venv/bin/activate && \
 	python data_processing/generate_data.py
 	@echo "✓ Data generation complete"
+	@echo "Splitting data into train/test (80/20)..."
+	source .venv/bin/activate && \
+	python -m data_processing.split_data
+	@echo "✓ Data split complete"
 
 train:
 	@echo "Training MLP model on Lotka-Volterra data..."
@@ -54,7 +58,7 @@ eval:
 	@echo "Evaluating trained model on test set..."
 	@echo "Config: config/alexis/eval_MLP.yaml"
 	source .venv/bin/activate && \
-	python main.py --config config/alexis/eval_MLP.yaml
+	python main.py --config config/alexis/eval_MLP.yaml --mode eval
 	@echo "✓ Evaluation complete"
 
 clean:

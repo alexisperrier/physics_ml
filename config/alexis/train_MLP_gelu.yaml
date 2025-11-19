@@ -1,0 +1,38 @@
+experiment:
+  name: AP_MLP_alexis_gelu
+  description: v2 with GELU activation (modern, smooth activation)
+  tracking_uri: http://localhost:5000
+  run_subdir: n/a_1
+
+data:
+  root: data_processing/data/lotka_volterra_trajectories
+  train_val_subdir: train_val
+  test_subdir: test
+  input_length: 50
+  target_length: 10
+  step: 5
+  decimation: 10
+  val_ratio: 0.3
+  seed: 808
+  dataset:
+    class: data_processing.datasets.TrajectoryWindowDataset
+    params:
+      input_length: 50
+      target_length: 10
+      step: 5
+
+model:
+  class: models.MLP.WindowMLP
+  params:
+    state_dim: 2
+    input_len: 50
+    target_len: 10
+    hidden_sizes: [128, 256, 128]
+    lr: 1e-5
+    activation: gelu  # Smooth, modern activation
+
+training:
+  batch_size: 128
+  max_epochs: 50
+  num_workers: 2
+  shuffle: true

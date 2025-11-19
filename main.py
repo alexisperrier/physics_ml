@@ -17,6 +17,7 @@ from pytorch_lightning.loggers import MLFlowLogger
 from torch.utils.data import DataLoader
 from scipy.signal import decimate
 import matplotlib.pyplot as plt
+import mlflow
 
 from data_processing.datasets import TrajectoryWindowDataset
 from data_processing.generate_data import read_trajectories_parquet_as_dicts, as_torch as sample_to_torch
@@ -108,6 +109,27 @@ def eval_from_config(config_like: str | Path | Dict) -> Dict[str, float]:
                 },
                 fd / f"{run_name}.pt",
             )
+
+    # Log to MLflow
+    experiment_name = config.get("experiment", {}).get("name", "evaluation")
+    tracking_uri = config.get("experiment", {}).get("tracking_uri", "sqlite:///mlflow.db")
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(experiment_name)
+
+    with mlflow.start_run(run_name="eval_predictions"):
+        # Log metrics
+        mlflow.log_metric("rmse", overall_rmse)
+
+        # Log plots as artifacts
+        if plot_dir_path and plot_dir_path.exists():
+            for plot_file in plot_dir_path.glob("*.png"):
+                mlflow.log_artifact(str(plot_file))
+
+        # Log metrics JSON
+        if metrics_path and Path(metrics_path).exists():
+            mlflow.log_artifact(str(Path(metrics_path)))
+
+        print(f"✓ Logged evaluation results to MLflow (experiment: {experiment_name})")
 
     return {"rmse": overall_rmse}
 
@@ -335,9 +357,15 @@ def train_from_config(config):
     print(f"Saved final checkpoint to {final_ckpt_path}")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Train or evaluate a model from config")
+    parser.add_argument("--config", type=str, default="config/LV/train_RNN.yaml", help="Path to config YAML file")
+    parser.add_argument("--mode", type=str, choices=["train", "eval"], default="train", help="Mode: train or eval")
+    args = parser.parse_args()
 
-    with open("config/LV/train_RNN.yaml", "r") as fh:
+    with open(args.config, "r") as fh:
         cfg = yaml.safe_load(fh)
-    train_from_config(cfg)
 
-    # eval_pinn("config/LV/eval_PINN.yaml")
+    if args.mode == "train":
+        train_from_config(cfg)
+    else:
+        eval_from_config(cfg)
