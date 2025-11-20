@@ -1,0 +1,40 @@
+experiment:
+  name: AP_Seq2SeqRNN_001
+  description: Encoder-Decoder RNN for Lotka-Volterra trajectory forecasting
+  tracking_uri: http://localhost:5000
+  run_subdir: seq2seqrnn/a_1
+
+data:
+  root: data_processing/data/lotka_volterra_trajectories
+  train_val_subdir: train_val
+  test_subdir: test
+  input_length: 100    # 100 timesteps of context at 100Hz = 1s
+  target_length: 10    # 10 timesteps forecast at 100Hz = 0.1s
+  step: 10             # Stride for sliding windows
+  decimation: 10       # Downsample from 1000Hz to 100Hz
+  val_ratio: 0.2
+  seed: 42
+  dataset:
+    class: data_processing.datasets.TrajectoryWindowDataset
+    params:
+      input_length: 100
+      target_length: 10
+      step: 10
+
+model:
+  class: models.Seq2SeqRNN.EncoderDecoderRNN
+  params:
+    state_dim: 2
+    input_length: 100
+    target_length: 10
+    hidden_dim: 64
+    num_layers: 2
+    lr: 1e-5
+    num_autoregressive_steps: 1      # 1: disabled autoregressive training
+    teacher_forcing_ratio: 1.0       # 100% ground truth during training
+
+training:
+  batch_size: 256
+  max_epochs: 10
+  num_workers: 4
+  shuffle: true

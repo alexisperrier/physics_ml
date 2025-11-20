@@ -1,0 +1,36 @@
+experiment:
+  name: AP_Seq2SeqRNN_alexis_001_eval
+  description: Evaluation of Encoder-Decoder RNN on Lotka-Volterra test set
+  tracking_uri: http://localhost:5000
+
+data:
+  root: data_processing/data/lotka_volterra_trajectories
+  test_subdir: test
+  input_length: 100
+  target_length: 10
+  decimation: 10
+
+model:
+  checkpoint_path: artifacts/seq2seqrnn/a_1/checkpoints/last.ckpt
+  class: models.Seq2SeqRNN.EncoderDecoderRNN
+  params:
+    state_dim: 2
+    input_length: 100
+    target_length: 10
+    hidden_dim: 64
+    num_layers: 2
+    lr: 1e-5
+
+evaluation:
+  max_test_samples: null  # Use all test samples
+  autoregressive: true    # Iteratively use predictions
+  autoregressive_steps: 50  # Number of steps to roll out (5x the target_length for longer horizon)
+  metrics:
+    - mse
+    - mae
+
+output:
+  save_metrics: true
+  metrics_path: artifacts/seq2seqrnn_eval_results.json
+  plot_dir: plots/eval_results
+  plot_show: false

@@ -50,25 +50,25 @@ generate-data:
 
 train:
 	@echo "Training MLP model on Lotka-Volterra data..."
-	@echo "Config: config/alexis/train_MLP.yaml"
+	@echo "Config: config/alexis/train_Seq2SeqRNN.yaml"
 	@echo "MLflow tracking at: http://127.0.0.1:5000"
 	source .venv/bin/activate && \
-	python main.py --config config/alexis/train_MLP.yaml
+	python main.py --config config/alexis/train_Seq2SeqRNN.yaml
 	@echo "✓ Training complete"
 
 train-resume:
 	@echo "Resuming training from latest checkpoint..."
-	@echo "Config: config/alexis/train_MLP.yaml"
+	@echo "Config: config/alexis/train_Seq2SeqRNN.yaml"
 	@echo "MLflow tracking at: http://127.0.0.1:5000"
 	source .venv/bin/activate && \
-	python main.py --config config/alexis/train_MLP.yaml --resume
+	python main.py --config config/alexis/train_Seq2SeqRNN.yaml --resume
 	@echo "✓ Training resumed"
 
 eval:
 	@echo "Evaluating trained model on test set..."
-	@echo "Config: config/alexis/eval_MLP.yaml"
+	@echo "Config: config/alexis/eval_Seq2SeqRNN.yaml"
 	source .venv/bin/activate && \
-	python main.py --config config/alexis/eval_MLP.yaml --mode eval
+	python main.py --config config/alexis/eval_Seq2SeqRNN.yaml --mode eval
 	@echo "✓ Evaluation complete"
 
 clean:
