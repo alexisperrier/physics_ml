@@ -11,7 +11,22 @@ from .generate_data import read_trajectories_parquet_as_dicts, as_torch as sampl
 
 class TrajectoryWindowDataset(Dataset):
     """
-    Provides (states, future states) supervision windows.
+    Sliding window dataset for RNN/MLP seq2seq models.
+
+    Creates (past_window, future_window) pairs by sliding across trajectories.
+
+    Used by: MLP (WindowMLP), RNN (AutoencoderRNN) models
+
+    Example with input_length=100, target_length=10, step=10:
+        Trajectory: [y_0, y_1, ..., y_N]
+        Window 1: past=[y_0:y_100] → future=[y_100:y_110]
+        Window 2: past=[y_10:y_110] → future=[y_110:y_120]
+        Window 3: past=[y_20:y_120] → future=[y_120:y_130]
+        ...
+
+    Each sample returns:
+        - past: Tensor of shape [state_dim, input_length] - context window
+        - future: Tensor of shape [state_dim, target_length] - target to predict
     """
 
     def __init__(
@@ -77,12 +92,28 @@ class TrajectoryWindowDataset(Dataset):
 
 class OdePINNDataset(Dataset):
     """
-    Dataset where each sample corresponds to one (trajectory, time_index) pair.
+    Physics-Informed Neural Network (PINN) dataset with individual time points.
 
-    For each sample we return:
-    - collocation point (t, theta)
-    - supervised point (t_sup, u_sup, theta_sup) with SAME trajectory/parameters
-    - initial condition (t0, u0) for that trajectory
+    One sample = one (trajectory, time_index) pair for computing physics loss.
+
+    Used by: PINN models for physics-based training
+
+    Why different from TrajectoryWindowDataset?
+        - TrajectoryWindowDataset: Supervised learning on windows
+        - OdePINNDataset: Physics-based learning at individual points
+
+    PINNs need individual time points to:
+        1. Compute derivatives ∂u/∂t using autograd
+        2. Evaluate ODE residuals: ∂u/∂t - f(u, θ) = 0
+        3. Enforce initial conditions and data constraints
+
+    Each sample returns:
+        - t: Collocation point (time where residual is computed)
+        - theta: ODE parameters (α, β, γ, δ) for this trajectory
+        - t0, u0: Initial conditions (t=0, u(0))
+        - u_res: Residual target (always zero for physics loss)
+        - t_regression, u_regression: Supervised data point at time t
+        - traj_idx, time_idx: Trajectory and time indices for tracking
     """
     def __init__(
         self,
@@ -157,17 +188,31 @@ class OdePINNDataset(Dataset):
 
 class TrajectoryOdePINNDataset(Dataset):
     """
-    One sample = one whole trajectory.
+    PINN dataset where one sample = entire trajectory.
 
-    For each trajectory k we return stacked tensors containing all time steps:
-      - t:              [T, 1]
-      - theta:          [T, P]  (same theta row repeated)
-      - t0:             [T, 1]  (same initial time repeated)
-      - u0:             [T, D]  (same initial state repeated)
-      - u_res:          [T, D]  (zeros, residual target)
-      - t_regression:   [T, 1]
-      - u_regression:   [T, D]
-    So that the model sees all times of a single trajectory in one forward pass.
+    Used by: PINN models that process full trajectories in one forward pass
+
+    Difference from OdePINNDataset:
+        - OdePINNDataset: One sample = one time point (T samples per trajectory)
+        - TrajectoryOdePINNDataset: One sample = full trajectory (1 sample per trajectory)
+        - This dataset is ~T times smaller!
+
+    Benefit:
+        - More efficient: Single forward pass processes entire trajectory
+        - Better for models that can leverage temporal structure
+        - Reduced dataloader overhead
+
+    For each trajectory k, returns stacked tensors containing all time steps:
+        - t:              [T, 1]  (all time points)
+        - theta:          [T, P]  (same parameters repeated T times)
+        - t0:             [T, 1]  (same initial time repeated T times)
+        - u0:             [T, D]  (same initial state repeated T times)
+        - u_res:          [T, D]  (zeros, residual target)
+        - t_regression:   [T, 1]  (all time points)
+        - u_regression:   [T, D]  (all state values)
+        - traj_idx:       scalar  (trajectory index for tracking)
+
+    The model sees all T times of a single trajectory in one forward pass.
     """
 
     def __init__(
@@ -244,12 +289,32 @@ class TrajectoryOdePINNDataset(Dataset):
     
 class FourierOdePINNDataset(Dataset):
     """
-    Like OdePINNDataset, but with extra Fourier / sinusoidal time features.
+    OdePINNDataset with Fourier time encodings for better temporal representation.
 
-    For each sample we return everything from OdePINNDataset plus:
-      - t_fourier: [1, 2 * n_frequencies] built from normalized time t_norm = t / t_max
+    Used by: PINN models that benefit from periodic time features
 
-    The model can concatenate these features with other inputs if desired.
+    Why Fourier features?
+        - Raw time t ∈ [0, T_max] is a poor representation for periodic systems
+        - Oscillatory systems (like Lotka-Volterra) have periodic structure
+        - Fourier features capture periodicity better than linear time
+
+    Fourier encoding:
+        t_norm = t / t_max              # Normalize time to [0, 1]
+        features = [sin(2π·1·t_norm), cos(2π·1·t_norm),
+                    sin(2π·2·t_norm), cos(2π·2·t_norm),
+                    ...,
+                    sin(2π·K·t_norm), cos(2π·K·t_norm)]
+
+        where K = n_frequencies (default 4)
+        Output shape: [1, 2*K] = [1, 8] by default
+
+    Benefits:
+        - Periodic patterns are more easily represented
+        - Helps PINN learn oscillatory dynamics
+        - Similar to positional encoding in transformers
+
+    Each sample returns everything from OdePINNDataset plus:
+        - t_fourier: [1, 2*n_frequencies] Fourier time features
     """
 
     def __init__(
