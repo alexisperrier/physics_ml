@@ -12,32 +12,38 @@ class EncoderDecoderRNN(Seq2SeqForecastingModule):
                 hidden_dim: int,
                 num_layers: int = 1,
                 lr: float = 1e-3,
+                num_autoregressive_steps: int = 1,
+                teacher_forcing_ratio: float = 0.0,
                 ):
-        super().__init__(lr=lr)
+        super().__init__(lr=lr, num_autoregressive_steps=num_autoregressive_steps, teacher_forcing_ratio=teacher_forcing_ratio)
 
-        self.state_dim = state_dim 
+        self.state_dim = state_dim
         self.target_length = target_length
         self.input_length = input_length
 
         self.save_hyperparameters({
             "state_dim": state_dim,
-            "target_length": input_length,
+            "input_length": input_length,
             "target_length": target_length,
             "hidden_dim": hidden_dim,
             "num_layers": num_layers,
             "lr": lr,
+            "num_autoregressive_steps": num_autoregressive_steps,
+            "teacher_forcing_ratio": teacher_forcing_ratio,
         })
 
-        self.encoder = nn.RNN(
-            input_size=state_dim,      
-            hidden_size=hidden_dim,    # latent size 
+        self.encoder = nn.LSTM(
+            input_size=state_dim,
+            hidden_size=hidden_dim,    # latent size
             num_layers=num_layers,
             batch_first=True,
+            dropout=0.2 if num_layers > 1 else 0,
         )
 
         self.mlp = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim * 2),
-            nn.ReLU(),
+            nn.Tanh(),
+            # nn.Dropout(0.1),
             nn.Linear(hidden_dim * 2, target_length * state_dim),
         )
 
@@ -45,16 +51,16 @@ class EncoderDecoderRNN(Seq2SeqForecastingModule):
         h_last = h0[-1]                     # (N, hidden_dim)
         flat = self.mlp(h_last)             # (N, target_length*state_dim)
         return flat.view(-1, self.target_length, self.state_dim)
-    
+
     def forward(self, past: torch.Tensor, future_len: int) -> torch.Tensor:  # type: ignore[override]
         if future_len != self.target_length:
-            raise ValueError(f"WindowMLP configured for target_len={self.target_len}, got {future_len}.")
-        
+            raise ValueError(f"EncoderDecoderRNN configured for target_length={self.target_length}, got {future_len}.")
+
         past_seq = past.permute(0, 2, 1).contiguous()   # Expect past as [batch, state_dim, input_len] -> convert to [batch, input_len, state_dim]
-        _, h_n = self.encoder(past_seq)                 # h_n: [num_layers, batch, hidden_dim]
+        _, (h_n, c_n) = self.encoder(past_seq)          # h_n: [num_layers, batch, hidden_dim], c_n: cell state (LSTM)
         dec_seq = self.decoder(h_n)                     # [batch, target_length, state_dim]
         return dec_seq.permute(0, 2, 1).contiguous()    # [batch, state_dim, target_length]
-    
+
     @torch.no_grad()
     def autoregressive_forecast(
         self,
