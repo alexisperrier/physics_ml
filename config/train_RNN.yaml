@@ -15,7 +15,7 @@ data:
   seed: 42
 
 model:
-  class: models.AutoencoderRNN.EncoderDecoderRNN
+  class: models.Seq2SeqRNN.EncoderDecoderRNN
   params:
     state_dim: 4
     hidden_dim: 128

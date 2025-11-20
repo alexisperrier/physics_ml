@@ -170,7 +170,7 @@ The code automatically detects and uses CUDA if available.
 ├── models/                         # Neural network architectures
 │   ├── MLP.py
 │   ├── PINN.py
-│   ├── AutoencoderRNN.py
+│   ├── Seq2SeqRNN.py
 │   └── seq2seqmodule.py
 ├── data_processing/               # Data generation and datasets
 │   ├── generate_data.py

@@ -15,7 +15,7 @@ class TrajectoryWindowDataset(Dataset):
 
     Creates (past_window, future_window) pairs by sliding across trajectories.
 
-    Used by: MLP (WindowMLP), RNN (AutoencoderRNN) models
+    Used by: MLP (WindowMLP), RNN (Seq2SeqRNN) models
 
     Example with input_length=100, target_length=10, step=10:
         Trajectory: [y_0, y_1, ..., y_N]

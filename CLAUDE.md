@@ -57,7 +57,7 @@ eval_from_config("config/path/to/eval_config.yaml")
   - Supports autoregressive forecasting
   - Simple baseline for data-driven approaches
 
-- **RNN Encoder-Decoder** (`models/AutoencoderRNN.py`):
+- **RNN Encoder-Decoder** (`models/Seq2SeqRNN.py`):
   - Encodes history into a context vector
   - Decoder MLP expands context to forecast multiple timesteps
   - Handles variable forecast horizons
