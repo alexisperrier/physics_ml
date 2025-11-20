@@ -1,38 +1,40 @@
 experiment:
   name: AP_MLP_alexis_002
-  description: v2 shorter prediction horizon, longer training, deeper network
+  description: no teacher forcing, no autoregressive training, resume mode
   tracking_uri: http://localhost:5000
-  run_subdir: mlp/a_3
+  run_subdir: mlp/a_6
 
 data:
   root: data_processing/data/lotka_volterra_trajectories
   train_val_subdir: train_val
   test_subdir: test
-  input_length: 50    # 50 timesteps of context at 100Hz = 0.5s
-  target_length: 5   # 5 timesteps forecast at 100Hz = 0.05s
-  step: 5             # Stride for sliding windows (5 = moderate overlap)
+  input_length: 100    # 100 timesteps of context at 100Hz = 1s
+  target_length: 10   # 10 timesteps forecast at 100Hz = 0.1s
+  step: 10             # Stride for sliding windows (5 = moderate overlap)
   decimation: 10      # Downsample from 1000Hz to 100Hz
   val_ratio: 0.3
   seed: 808
   dataset:
     class: data_processing.datasets.TrajectoryWindowDataset
     params:
-      input_length: 50
-      target_length: 5
-      step: 5
+      input_length: 100
+      target_length: 10
+      step: 10
 
 model:
   class: models.MLP.WindowMLP
   params:
     state_dim: 2
-    input_len: 50
-    target_len: 5
+    input_len: 100
+    target_len: 10
     hidden_sizes: [256, 512, 256]
     lr: 1e-5
     activation: tanh  # Better for smooth oscillatory signals
+    num_autoregressive_steps: 1    # 1: disabled auto regression training. 5 :5 steps × 5 timesteps = 25 total autoregressive
+    teacher_forcing_ratio: 1.0     # 100% ground truth, 0% predictions during training
 
 training:
-  batch_size: 128
-  max_epochs: 100
+  batch_size: 256
+  max_epochs: 16
   num_workers: 2
   shuffle: true

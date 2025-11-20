@@ -42,6 +42,18 @@ def eval_from_config(config_like: str | Path | Dict) -> Dict[str, float]:
     model.to(device)
     model.eval()
 
+    # Extract epoch number from checkpoint for organizing plots
+    epoch_num = "unknown"
+    checkpoint_path = config["model"].get("checkpoint_path")
+    if checkpoint_path:
+        try:
+            ckpt = torch.load(checkpoint_path, map_location=device)
+            epoch_num = ckpt.get("epoch", "unknown")
+            if isinstance(epoch_num, int):
+                epoch_num = f"{epoch_num:02d}"
+        except Exception:
+            epoch_num = "unknown"
+
     output_cfg = config.get("output", {})
     plot_dir = output_cfg.get("plot_dir")
     plot_show = bool(output_cfg.get("plot_show", False))
@@ -49,9 +61,24 @@ def eval_from_config(config_like: str | Path | Dict) -> Dict[str, float]:
     metrics_path = output_cfg.get("metrics_path")
     forecast_dir = output_cfg.get("forecast_dir")
 
-    plot_dir_path = Path(plot_dir) if plot_dir else None
-    if plot_dir_path:
+    # Set up MLflow tracking
+    experiment_name = config.get("experiment", {}).get("name", "evaluation")
+    tracking_uri = config.get("experiment", {}).get("tracking_uri", "sqlite:///mlflow.db")
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(experiment_name)
+
+    # Start MLflow run early
+    mlflow.start_run(run_name="eval_predictions")
+
+    # Create timestamp-based directory for plots (human-readable instead of hash)
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    # Create timestamp and epoch-specific subdirectories for plots
+    plot_dir_path = None
+    if plot_dir:
+        plot_dir_path = Path(plot_dir) / timestamp / f"epoch_{epoch_num}"
         plot_dir_path.mkdir(parents=True, exist_ok=True)
+        print(f"Saving plots to: {plot_dir_path}")
 
     per_series_rmse: List[float] = []
     results_cache: List[Dict] = []
@@ -110,26 +137,20 @@ def eval_from_config(config_like: str | Path | Dict) -> Dict[str, float]:
                 fd / f"{run_name}.pt",
             )
 
-    # Log to MLflow
-    experiment_name = config.get("experiment", {}).get("name", "evaluation")
-    tracking_uri = config.get("experiment", {}).get("tracking_uri", "sqlite:///mlflow.db")
-    mlflow.set_tracking_uri(tracking_uri)
-    mlflow.set_experiment(experiment_name)
+    # Log metrics to MLflow (run already started above)
+    mlflow.log_metric("rmse", overall_rmse)
 
-    with mlflow.start_run(run_name="eval_predictions"):
-        # Log metrics
-        mlflow.log_metric("rmse", overall_rmse)
+    # Log plots as artifacts
+    if plot_dir_path and plot_dir_path.exists():
+        for plot_file in plot_dir_path.glob("*.png"):
+            mlflow.log_artifact(str(plot_file))
 
-        # Log plots as artifacts
-        if plot_dir_path and plot_dir_path.exists():
-            for plot_file in plot_dir_path.glob("*.png"):
-                mlflow.log_artifact(str(plot_file))
+    # Log metrics JSON
+    if metrics_path and Path(metrics_path).exists():
+        mlflow.log_artifact(str(Path(metrics_path)))
 
-        # Log metrics JSON
-        if metrics_path and Path(metrics_path).exists():
-            mlflow.log_artifact(str(Path(metrics_path)))
-
-        print(f"✓ Logged evaluation results to MLflow (experiment: {experiment_name})")
+    mlflow.end_run()
+    print(f"✓ Logged evaluation results to MLflow (experiment: {experiment_name})")
 
     return {"rmse": overall_rmse}
 
@@ -250,7 +271,7 @@ def eval_pinn(config_path: str = "config/eval_PINN.yaml") -> Dict[str, float]:
 
     return {"rmse": overall_rmse}
 
-def train_from_config(config):
+def train_from_config(config, resume: bool = False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     run_subdir = config["experiment"]["run_subdir"]
@@ -302,6 +323,7 @@ def train_from_config(config):
         dirpath=run_dir / "checkpoints",
         filename="epoch{epoch:02d}-val_loss{val_loss:.4f}",
         save_top_k=-1,
+        save_last=True,
         every_n_epochs=1,
     )
 
@@ -349,7 +371,12 @@ def train_from_config(config):
         f"batches/epoch: {len(train_loader)}"
     )
 
-    trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader)
+    # Resume from latest checkpoint if requested
+    ckpt_path = "last" if resume else None
+    if resume:
+        print(f"Resuming training from latest checkpoint...")
+
+    trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader, ckpt_path=ckpt_path)
 
     final_ckpt_path = run_dir / "final_model.ckpt"
     final_ckpt_path.parent.mkdir(exist_ok=True)
@@ -360,12 +387,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train or evaluate a model from config")
     parser.add_argument("--config", type=str, default="config/LV/train_RNN.yaml", help="Path to config YAML file")
     parser.add_argument("--mode", type=str, choices=["train", "eval"], default="train", help="Mode: train or eval")
+    parser.add_argument("--resume", action="store_true", help="Resume training from latest checkpoint")
     args = parser.parse_args()
 
     with open(args.config, "r") as fh:
         cfg = yaml.safe_load(fh)
 
     if args.mode == "train":
-        train_from_config(cfg)
+        train_from_config(cfg, resume=args.resume)
     else:
         eval_from_config(cfg)

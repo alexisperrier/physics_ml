@@ -6,17 +6,17 @@ experiment:
 data:
   root: data_processing/data/lotka_volterra_trajectories
   test_subdir: test
-  input_length: 50
-  target_length: 5
+  input_length: 100
+  target_length: 10
   decimation: 10
 
 model:
-  checkpoint_path: artifacts/mlp/a_3/final_model.ckpt
+  checkpoint_path: artifacts/mlp/a_6/checkpoints/last.ckpt
   class: models.MLP.WindowMLP
   params:
     state_dim: 2
-    input_len: 50
-    target_len: 5
+    input_len: 100
+    target_len: 10
     hidden_sizes: [256, 512, 256]
     lr: 1e-5
 
@@ -27,7 +27,6 @@ evaluation:
   metrics:
     - mse
     - mae
-    - r2
 
 output:
   save_metrics: true

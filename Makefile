@@ -1,4 +1,4 @@
-.PHONY: help setup mlflow jupyter generate-data train eval clean
+.PHONY: help setup mlflow jupyter generate-data train train-resume eval clean clean-plots
 
 help:
 	@echo "Available targets:"
@@ -8,13 +8,15 @@ help:
 	@echo "    make generate-data  Generate Lotka-Volterra trajectory data"
 	@echo ""
 	@echo "  Training & Evaluation:"
-	@echo "    make train          Train MLP model on Lotka-Volterra data"
+	@echo "    make train          Train MLP model on Lotka-Volterra data (from scratch)"
+	@echo "    make train-resume   Resume training from latest checkpoint"
 	@echo "    make eval           Evaluate trained model on test set"
 	@echo ""
 	@echo "  Development:"
 	@echo "    make mlflow         Start MLflow UI with SQLite backend"
 	@echo "    make jupyter        Start Jupyter Lab"
 	@echo "    make clean          Clean up generated files and cache"
+	@echo "    make clean-plots    Keep only the most recent eval plots"
 	@echo ""
 
 setup:
@@ -54,6 +56,14 @@ train:
 	python main.py --config config/alexis/train_MLP.yaml
 	@echo "✓ Training complete"
 
+train-resume:
+	@echo "Resuming training from latest checkpoint..."
+	@echo "Config: config/alexis/train_MLP.yaml"
+	@echo "MLflow tracking at: http://127.0.0.1:5000"
+	source .venv/bin/activate && \
+	python main.py --config config/alexis/train_MLP.yaml --resume
+	@echo "✓ Training resumed"
+
 eval:
 	@echo "Evaluating trained model on test set..."
 	@echo "Config: config/alexis/eval_MLP.yaml"
@@ -68,5 +78,27 @@ clean:
 	rm -rf .pytest_cache
 	rm -rf .ipynb_checkpoints
 	@echo "✓ Cleanup complete"
+
+clean-plots:
+	@echo "Cleaning up old evaluation plots..."
+	@if [ -d "plots/eval_results" ]; then \
+		cd plots/eval_results && \
+		most_recent=$$(ls -dt */ 2>/dev/null | head -1 | sed 's|/||'); \
+		if [ -z "$$most_recent" ]; then \
+			echo "No eval plots found"; \
+		else \
+			echo "Keeping most recent: $$most_recent"; \
+			for dir in */; do \
+				if [ "$$dir" != "$$most_recent/" ]; then \
+					echo "  Removing: $$dir"; \
+					rm -rf "$$dir"; \
+				fi; \
+			done; \
+			echo "✓ Cleanup complete"; \
+		fi; \
+		cd ../..; \
+	else \
+		echo "No plots directory found"; \
+	fi
 
 .DEFAULT_GOAL := help

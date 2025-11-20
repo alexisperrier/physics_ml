@@ -24,8 +24,14 @@ class WindowMLP(Seq2SeqForecastingModule):
         hidden_sizes: tuple[int, ...],
         lr: float = 1e-3,
         activation: str = 'tanh',
+        num_autoregressive_steps: int = 1,
+        teacher_forcing_ratio: float = 0.0,
     ):
-        super().__init__(lr=lr)
+        super().__init__(
+            lr=lr,
+            num_autoregressive_steps=num_autoregressive_steps,
+            teacher_forcing_ratio=teacher_forcing_ratio,
+        )
         self.save_hyperparameters({
             "state_dim": state_dim,
             "input_len": input_len,
@@ -33,6 +39,8 @@ class WindowMLP(Seq2SeqForecastingModule):
             "hidden_sizes": list(hidden_sizes),
             "lr": lr,
             "activation": activation,
+            "num_autoregressive_steps": num_autoregressive_steps,
+            "teacher_forcing_ratio": teacher_forcing_ratio,
         })
 
         # Get activation function class
@@ -58,9 +66,9 @@ class WindowMLP(Seq2SeqForecastingModule):
         if future_len != self.target_len:
             raise ValueError(f"WindowMLP configured for target_len={self.target_len}, got {future_len}.")
         batch = past.size(0)
-        x = past.view(batch, -1)
+        x = past.reshape(batch, -1)
         y = self.net(x)
-        return y.view(batch, self.state_dim, self.target_len)
+        return y.reshape(batch, self.state_dim, self.target_len)
 
     def autoregressive_forecast(
         self: nn.Module,

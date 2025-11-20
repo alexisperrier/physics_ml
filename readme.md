@@ -66,7 +66,37 @@ Physics ML - Neural Network Models for ODE Systems
   make jupyter
 
   # Train a model
+  make train
+
+  # Or use direct command
   python main.py --config config/alexis/train_MLP.yaml
+
+  # Resume training from latest checkpoint
+  make train-resume
+
+  # Evaluate model
+  make eval
+
+  Training Features
+
+  - Autoregressive training: Model learns to handle its own prediction errors
+  - Teacher forcing: Configurable blend of ground truth (80%) and predictions (20%)
+  - Checkpoint resumption: Train for N epochs, evaluate, then continue if results look good
+  - MLflow integration: All metrics logged automatically
+
+  Example Workflow for Iterative Training
+
+  # Train for first batch of epochs
+  make train
+
+  # Check results in MLflow UI
+  mlflow ui
+
+  # View evaluation plots
+  make eval
+
+  # If results promising, continue training
+  make train-resume
 
   Current Focus
 
